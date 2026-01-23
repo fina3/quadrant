@@ -1,22 +1,211 @@
 (function() {
-  if (document.getElementById('quadrant-note')) return;
+  if (window.__quadrantInitialized) return;
+  window.__quadrantInitialized = true;
 
   const STORAGE_KEY = 'quadrant_' + location.hostname;
   const DEBOUNCE_MS = 500;
   let saveTimeout = null;
+  let note = null;
+  let shadowRoot = null;
+  let isVisible = false;
 
-  // Create note
-  const note = document.createElement('div');
-  note.id = 'quadrant-note';
+  // Create host and shadow DOM
+  const host = document.createElement('div');
+  host.id = 'quadrant-host';
+  document.body.appendChild(host);
+  shadowRoot = host.attachShadow({ mode: 'closed' });
+
+  // Inject styles into shadow DOM
+  const styles = document.createElement('style');
+  styles.textContent = `
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    .note {
+      position: fixed;
+      width: 300px;
+      height: 300px;
+      min-width: 200px;
+      min-height: 180px;
+      background: #fff9b1;
+      border-radius: 4px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      display: none;
+      flex-direction: column;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      resize: both;
+      overflow: hidden;
+      pointer-events: auto;
+      will-change: transform;
+    }
+
+    .note.visible {
+      display: flex;
+    }
+
+    .header {
+      height: 16px;
+      min-height: 16px;
+      background: #f0e098;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 6px;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .header.dragging {
+      cursor: grabbing;
+    }
+
+    .header-title {
+      font-size: 9px;
+      font-weight: 600;
+      color: #665;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .header-btn {
+      background: none;
+      border: none;
+      color: #887;
+      font-size: 9px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 2px;
+      font-family: inherit;
+    }
+
+    .header-btn:hover {
+      background: rgba(0,0,0,0.1);
+      color: #443;
+    }
+
+    .copy-btn { font-size: 11px; }
+    .clear-btn { font-size: 8px; text-transform: uppercase; }
+    .close-btn { font-size: 14px; padding: 0 3px; }
+
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 4px 10px 10px 24px;
+      min-height: 0;
+    }
+
+    .top-labels {
+      display: flex;
+      height: 14px;
+      padding-left: 2px;
+    }
+
+    .top-label {
+      flex: 1;
+      font-size: 9px;
+      color: #998;
+      text-transform: uppercase;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .grid-container {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .side-labels {
+      width: 16px;
+      margin-left: -20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .side-label {
+      flex: 1;
+      font-size: 9px;
+      color: #998;
+      text-transform: uppercase;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      transform: rotate(180deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 500;
+    }
+
+    .grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 2px;
+      background: rgba(0,0,0,0.06);
+      border-radius: 2px;
+      min-height: 0;
+    }
+
+    .cell {
+      background: rgba(255,255,255,0.3);
+      min-height: 0;
+      min-width: 0;
+      border-radius: 1px;
+    }
+
+    .cell textarea {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
+      resize: none;
+      padding: 6px;
+      font-family: inherit;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #333;
+      outline: none;
+      overflow-y: auto;
+    }
+
+    .cell textarea::placeholder {
+      color: #aa9;
+      font-size: 10px;
+    }
+
+    .cell textarea::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .cell textarea::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.15);
+      border-radius: 2px;
+    }
+  `;
+  shadowRoot.appendChild(styles);
+
+  // Create note element
+  note = document.createElement('div');
+  note.className = 'note';
   note.innerHTML = `
     <div class="header">
-      <div class="header-left">
-        <span class="header-title">Quadrant</span>
-      </div>
+      <span class="header-title">Quadrant</span>
       <div class="header-controls">
         <button class="header-btn copy-btn" title="Copy to clipboard">📋</button>
         <button class="header-btn clear-btn" title="Clear all">Clear</button>
-        <button class="header-btn close-btn" title="Close">&times;</button>
+        <button class="header-btn close-btn" title="Hide">&times;</button>
       </div>
     </div>
     <div class="content">
@@ -30,28 +219,42 @@
           <span class="side-label">Not Important</span>
         </div>
         <div class="grid">
-          <div class="cell"><textarea data-cell="0" placeholder="Do First"></textarea></div>
-          <div class="cell"><textarea data-cell="1" placeholder="Schedule"></textarea></div>
-          <div class="cell"><textarea data-cell="2" placeholder="Delegate"></textarea></div>
-          <div class="cell"><textarea data-cell="3" placeholder="Eliminate"></textarea></div>
+          <div class="cell"><textarea data-cell="0" placeholder="Add tasks..."></textarea></div>
+          <div class="cell"><textarea data-cell="1" placeholder="Add tasks..."></textarea></div>
+          <div class="cell"><textarea data-cell="2" placeholder="Add tasks..."></textarea></div>
+          <div class="cell"><textarea data-cell="3" placeholder="Add tasks..."></textarea></div>
         </div>
       </div>
     </div>
   `;
 
-  // Default position (centered)
-  note.style.left = (window.innerWidth - 300) / 2 + 'px';
-  note.style.top = (window.innerHeight - 300) / 2 + 'px';
-
-  document.body.appendChild(note);
+  shadowRoot.appendChild(note);
 
   const textareas = note.querySelectorAll('textarea');
   const header = note.querySelector('.header');
 
-  // Close button
+  // Toggle visibility
+  function toggle() {
+    isVisible = !isVisible;
+    note.classList.toggle('visible', isVisible);
+    save();
+  }
+
+  function show() {
+    isVisible = true;
+    note.classList.add('visible');
+  }
+
+  function hide() {
+    isVisible = false;
+    note.classList.remove('visible');
+    save();
+  }
+
+  // Close button hides
   note.querySelector('.close-btn').onclick = (e) => {
     e.stopPropagation();
-    note.remove();
+    hide();
   };
 
   // Copy button
@@ -80,25 +283,33 @@
     e.stopPropagation();
     if (confirm('Clear all tasks?')) {
       textareas.forEach(ta => ta.value = '');
-      chrome.storage.local.remove(STORAGE_KEY);
+      save();
     }
   };
 
-  // Drag by header
+  // Smooth drag
   let dragging = false, dragX, dragY;
+  let noteX, noteY;
 
   header.onmousedown = (e) => {
     if (e.target.closest('.header-btn')) return;
+    e.preventDefault();
     dragging = true;
-    dragX = e.clientX - note.offsetLeft;
-    dragY = e.clientY - note.offsetTop;
+    const rect = note.getBoundingClientRect();
+    noteX = rect.left;
+    noteY = rect.top;
+    dragX = e.clientX;
+    dragY = e.clientY;
     header.classList.add('dragging');
   };
 
   document.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    note.style.left = (e.clientX - dragX) + 'px';
-    note.style.top = (e.clientY - dragY) + 'px';
+    e.preventDefault();
+    const dx = e.clientX - dragX;
+    const dy = e.clientY - dragY;
+    note.style.left = (noteX + dx) + 'px';
+    note.style.top = (noteY + dy) + 'px';
   });
 
   document.addEventListener('mouseup', () => {
@@ -110,18 +321,22 @@
   });
 
   // Track resize
-  const resizeObserver = new ResizeObserver(() => save());
+  const resizeObserver = new ResizeObserver(() => {
+    if (isVisible) save();
+  });
   resizeObserver.observe(note);
 
   // Save state
   function save() {
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
+      const rect = note.getBoundingClientRect();
       const state = {
-        x: note.offsetLeft,
-        y: note.offsetTop,
+        x: rect.left,
+        y: rect.top,
         width: note.offsetWidth,
         height: note.offsetHeight,
+        visible: isVisible,
         cells: {}
       };
       textareas.forEach(ta => {
@@ -151,6 +366,20 @@
           }
         });
       }
+      if (state.visible) {
+        show();
+      }
+    } else {
+      // Default position centered
+      note.style.left = (window.innerWidth - 300) / 2 + 'px';
+      note.style.top = (window.innerHeight - 300) / 2 + 'px';
+    }
+  });
+
+  // Listen for toggle messages
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'toggle') {
+      toggle();
     }
   });
 })();

@@ -8,6 +8,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.scripting.executeScript({
       target: { tabId: message.tabId },
       files: ['content.js']
+    }).then(() => {
+      // Send toggle message after injection
+      chrome.tabs.sendMessage(message.tabId, { action: 'toggle' });
     });
   }
 });
