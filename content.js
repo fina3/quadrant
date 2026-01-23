@@ -13,15 +13,53 @@
   let activeTextarea = null;
   let isPinned = false;
   let pinBtn = null;
-  let isLoading = true; // Prevent saves during initial load
+  let textareas = null;
+  let isLoading = true;
 
-  // Create host and shadow DOM
+  // ============================================
+  // SAFE STORAGE HELPERS
+  // ============================================
+
+  async function safeStorageGet(keys) {
+    try {
+      return await chrome.storage.local.get(keys);
+    } catch (e) {
+      if (e.message?.includes('Extension context invalidated')) {
+        console.log('Quadrant: extension reloaded, storage unavailable');
+      }
+      return {};
+    }
+  }
+
+  async function safeStorageSet(data) {
+    try {
+      await chrome.storage.local.set(data);
+    } catch (e) {
+      if (e.message?.includes('Extension context invalidated')) {
+        console.log('Quadrant: extension reloaded, storage unavailable');
+      }
+    }
+  }
+
+  async function safeStorageRemove(key) {
+    try {
+      await chrome.storage.local.remove(key);
+    } catch (e) {
+      if (e.message?.includes('Extension context invalidated')) {
+        console.log('Quadrant: extension reloaded, storage unavailable');
+      }
+    }
+  }
+
+  // ============================================
+  // CREATE DOM STRUCTURE
+  // ============================================
+
   const host = document.createElement('div');
   host.id = 'quadrant-host';
   document.body.appendChild(host);
   shadowRoot = host.attachShadow({ mode: 'closed' });
 
-  // Inject styles into shadow DOM
   const styles = document.createElement('style');
   styles.textContent = `
     * {
@@ -204,7 +242,6 @@
   `;
   shadowRoot.appendChild(styles);
 
-  // Create note element
   note = document.createElement('div');
   note.className = 'note';
   note.innerHTML = `
@@ -239,19 +276,17 @@
 
   shadowRoot.appendChild(note);
 
-  const textareas = note.querySelectorAll('textarea');
+  textareas = note.querySelectorAll('textarea');
   const header = note.querySelector('.header');
   pinBtn = note.querySelector('.pin-btn');
 
   // ============================================
   // KEYBOARD EVENT ISOLATION
-  // Prevents host pages (Gmail, Notion, Slack, etc.) from capturing keystrokes
   // ============================================
 
   const KEYBOARD_EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput'];
   const ALL_EVENTS = [...KEYBOARD_EVENTS, 'paste', 'cut', 'copy', 'compositionstart', 'compositionend', 'compositionupdate'];
 
-  // Stop events at the note level (capture phase)
   ALL_EVENTS.forEach(eventType => {
     note.addEventListener(eventType, (e) => {
       e.stopPropagation();
@@ -259,7 +294,6 @@
     }, true);
   });
 
-  // Stop events at the host element level
   ALL_EVENTS.forEach(eventType => {
     host.addEventListener(eventType, (e) => {
       e.stopPropagation();
@@ -267,7 +301,6 @@
     }, true);
   });
 
-  // Intercept at window/document level when our textarea is focused
   function windowKeyHandler(e) {
     if (activeTextarea) {
       e.stopPropagation();
@@ -280,16 +313,9 @@
     document.addEventListener(eventType, windowKeyHandler, true);
   });
 
-  // Track active textarea
   textareas.forEach(ta => {
-    ta.addEventListener('focus', () => {
-      activeTextarea = ta;
-    });
-    ta.addEventListener('blur', () => {
-      if (activeTextarea === ta) {
-        activeTextarea = null;
-      }
-    });
+    ta.addEventListener('focus', () => { activeTextarea = ta; });
+    ta.addEventListener('blur', () => { if (activeTextarea === ta) activeTextarea = null; });
   });
 
   // ============================================
@@ -311,34 +337,144 @@
   }
 
   // ============================================
-  // CORE FUNCTIONALITY
+  // VISIBILITY FUNCTIONS
   // ============================================
 
-  // Toggle visibility (always saves since it's user-initiated)
-  function toggle() {
-    isVisible = !isVisible;
-    note.classList.toggle('visible', isVisible);
-    if (!isLoading) save();
-  }
-
-  function show() {
+  function showNote() {
     isVisible = true;
     note.classList.add('visible');
   }
 
-  function hide() {
+  function hideNote() {
     isVisible = false;
     note.classList.remove('visible');
-    if (!isLoading) save();
   }
 
-  // Close button hides
+  function toggleNote() {
+    if (isVisible) {
+      hideNote();
+    } else {
+      showNote();
+    }
+    scheduleSave();
+  }
+
+  // ============================================
+  // SAVE / LOAD
+  // ============================================
+
+  function scheduleSave() {
+    if (isLoading) return;
+
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      const rect = note.getBoundingClientRect();
+      const state = {
+        x: rect.left,
+        y: rect.top,
+        width: note.offsetWidth,
+        height: note.offsetHeight,
+        isOpen: isVisible,
+        cells: {
+          '0': textareas[0].value,
+          '1': textareas[1].value,
+          '2': textareas[2].value,
+          '3': textareas[3].value
+        }
+      };
+      safeStorageSet({ [getCurrentStorageKey()]: state });
+    }, DEBOUNCE_MS);
+  }
+
+  function applyState(state) {
+    // Position
+    if (state.x !== undefined) {
+      note.style.left = state.x + 'px';
+    } else {
+      note.style.left = (window.innerWidth - 300) / 2 + 'px';
+    }
+    if (state.y !== undefined) {
+      note.style.top = state.y + 'px';
+    } else {
+      note.style.top = (window.innerHeight - 300) / 2 + 'px';
+    }
+
+    // Size
+    note.style.width = (state.width || 300) + 'px';
+    note.style.height = (state.height || 300) + 'px';
+
+    // Cell contents
+    if (state.cells) {
+      textareas.forEach(ta => {
+        ta.value = state.cells[ta.dataset.cell] || '';
+      });
+    } else {
+      textareas.forEach(ta => { ta.value = ''; });
+    }
+
+    // Visibility - auto-show if was open
+    if (state.isOpen || state.visible) {
+      showNote();
+    } else {
+      hideNote();
+    }
+  }
+
+  function setDefaults() {
+    note.style.left = (window.innerWidth - 300) / 2 + 'px';
+    note.style.top = (window.innerHeight - 300) / 2 + 'px';
+    note.style.width = '300px';
+    note.style.height = '300px';
+    textareas.forEach(ta => { ta.value = ''; });
+    hideNote();
+  }
+
+  async function loadState() {
+    isLoading = true;
+
+    const result = await safeStorageGet([SITE_KEY, GLOBAL_KEY]);
+
+    if (result[SITE_KEY]) {
+      // Site has pinned note
+      isPinned = true;
+      updatePinUI();
+      applyState(result[SITE_KEY]);
+    } else if (result[GLOBAL_KEY]) {
+      // Use global note
+      isPinned = false;
+      updatePinUI();
+      applyState(result[GLOBAL_KEY]);
+    } else {
+      // No saved state
+      isPinned = false;
+      updatePinUI();
+      setDefaults();
+    }
+
+    isLoading = false;
+  }
+
+  async function loadFromKey(key) {
+    isLoading = true;
+    const result = await safeStorageGet([key]);
+    if (result[key]) {
+      applyState(result[key]);
+    } else {
+      setDefaults();
+    }
+    isLoading = false;
+  }
+
+  // ============================================
+  // BUTTON HANDLERS
+  // ============================================
+
   note.querySelector('.close-btn').onclick = (e) => {
     e.stopPropagation();
-    hide();
+    hideNote();
+    scheduleSave();
   };
 
-  // Copy button
   note.querySelector('.copy-btn').onclick = (e) => {
     e.stopPropagation();
     const labels = [
@@ -359,38 +495,36 @@
     }
   };
 
-  // Pin button
-  pinBtn.onclick = (e) => {
+  pinBtn.onclick = async (e) => {
     e.stopPropagation();
 
     if (isPinned) {
-      // Unpinning: delete site-specific entry, switch to global
-      chrome.storage.local.remove(SITE_KEY, () => {
-        isPinned = false;
-        updatePinUI();
-        // Load global note
-        loadFromStorage(GLOBAL_KEY);
-      });
+      // Unpinning: delete site entry, switch to global
+      await safeStorageRemove(SITE_KEY);
+      isPinned = false;
+      updatePinUI();
+      await loadFromKey(GLOBAL_KEY);
     } else {
-      // Pinning: copy current state to site-specific entry
+      // Pinning: save current state to site key
       isPinned = true;
       updatePinUI();
-      save(); // This will save to SITE_KEY now
+      scheduleSave();
     }
   };
 
-  // Clear button
   note.querySelector('.clear-btn').onclick = (e) => {
     e.stopPropagation();
     if (confirm('Clear all tasks?')) {
-      textareas.forEach(ta => ta.value = '');
-      save();
+      textareas.forEach(ta => { ta.value = ''; });
+      scheduleSave();
     }
   };
 
-  // Smooth drag
-  let dragging = false, dragX, dragY;
-  let noteX, noteY;
+  // ============================================
+  // DRAG
+  // ============================================
+
+  let dragging = false, dragX, dragY, noteX, noteY;
 
   header.onmousedown = (e) => {
     if (e.target.closest('.header-btn')) return;
@@ -407,187 +541,89 @@
   document.addEventListener('mousemove', (e) => {
     if (!dragging) return;
     e.preventDefault();
-    const dx = e.clientX - dragX;
-    const dy = e.clientY - dragY;
-    note.style.left = (noteX + dx) + 'px';
-    note.style.top = (noteY + dy) + 'px';
+    note.style.left = (noteX + e.clientX - dragX) + 'px';
+    note.style.top = (noteY + e.clientY - dragY) + 'px';
   });
 
   document.addEventListener('mouseup', () => {
     if (dragging) {
       dragging = false;
       header.classList.remove('dragging');
-      if (!isLoading) save();
+      scheduleSave();
     }
   });
 
-  // Track resize
+  // ============================================
+  // RESIZE
+  // ============================================
+
   const resizeObserver = new ResizeObserver(() => {
-    if (isVisible && !isLoading) save();
+    if (isVisible && !isLoading) scheduleSave();
   });
   resizeObserver.observe(note);
 
-  // Save state
-  function save() {
-    if (isLoading) return; // Don't save during initial load
+  // ============================================
+  // TEXT INPUT
+  // ============================================
 
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      const rect = note.getBoundingClientRect();
-      const state = {
-        x: rect.left,
-        y: rect.top,
-        width: note.offsetWidth,
-        height: note.offsetHeight,
-        isOpen: isVisible,
-        cells: {}
-      };
-      textareas.forEach(ta => {
-        state.cells[ta.dataset.cell] = ta.value;
-      });
-
-      const storageKey = getCurrentStorageKey();
-      chrome.storage.local.set({ [storageKey]: state });
-    }, DEBOUNCE_MS);
-  }
-
-  // Save on text input
   textareas.forEach(ta => {
-    ta.addEventListener('input', save);
+    ta.addEventListener('input', scheduleSave);
   });
 
-  // Load state from a specific key
-  function loadFromStorage(key) {
-    isLoading = true;
-    chrome.storage.local.get([key], (result) => {
-      const state = result[key];
-      if (state) {
-        applyState(state);
-      } else {
-        // Default position centered, clear textareas, keep closed
-        note.style.left = (window.innerWidth - 300) / 2 + 'px';
-        note.style.top = (window.innerHeight - 300) / 2 + 'px';
-        note.style.width = '300px';
-        note.style.height = '300px';
-        textareas.forEach(ta => ta.value = '');
-        hide();
-      }
-      isLoading = false;
-    });
-  }
+  // ============================================
+  // CROSS-TAB SYNC
+  // ============================================
 
-  // Initial load: check if site has pinned note
-  function initLoad() {
-    isLoading = true;
+  try {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      if (isLoading) return;
 
-    chrome.storage.local.get([SITE_KEY, GLOBAL_KEY], (result) => {
-      if (result[SITE_KEY]) {
-        // Site has a pinned note - use site-specific state
-        isPinned = true;
-        updatePinUI();
-        applyState(result[SITE_KEY]);
-      } else if (result[GLOBAL_KEY]) {
-        // Use global note - same note across all sites
-        isPinned = false;
-        updatePinUI();
-        applyState(result[GLOBAL_KEY]);
-      } else {
-        // No saved state, use defaults (closed, centered)
-        isPinned = false;
-        updatePinUI();
-        note.style.left = (window.innerWidth - 300) / 2 + 'px';
-        note.style.top = (window.innerHeight - 300) / 2 + 'px';
-        note.style.width = '300px';
-        note.style.height = '300px';
-        // Note stays closed by default
-      }
+      const relevantKey = isPinned ? SITE_KEY : GLOBAL_KEY;
 
-      isLoading = false;
-    });
-  }
-
-  function applyState(state) {
-    // Apply position
-    if (state.x !== undefined) {
-      note.style.left = state.x + 'px';
-    } else {
-      note.style.left = (window.innerWidth - 300) / 2 + 'px';
-    }
-    if (state.y !== undefined) {
-      note.style.top = state.y + 'px';
-    } else {
-      note.style.top = (window.innerHeight - 300) / 2 + 'px';
-    }
-
-    // Apply size
-    note.style.width = (state.width || 300) + 'px';
-    note.style.height = (state.height || 300) + 'px';
-
-    // Apply cell contents
-    if (state.cells) {
-      textareas.forEach(ta => {
-        ta.value = state.cells[ta.dataset.cell] || '';
-      });
-    } else {
-      textareas.forEach(ta => {
-        ta.value = '';
-      });
-    }
-
-    // Apply visibility - check both 'isOpen' (new) and 'visible' (old) for backwards compat
-    if (state.isOpen || state.visible) {
-      show();
-    } else {
-      hide();
-    }
-  }
-
-  // Cross-tab sync: listen for storage changes
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local') return;
-    if (isLoading) return;
-
-    const relevantKey = isPinned ? SITE_KEY : GLOBAL_KEY;
-
-    if (changes[relevantKey]) {
-      const newState = changes[relevantKey].newValue;
-      if (newState) {
-        isLoading = true; // Prevent save loop
-        applyState(newState);
+      if (changes[relevantKey]?.newValue) {
+        isLoading = true;
+        applyState(changes[relevantKey].newValue);
         isLoading = false;
       }
-    }
 
-    // If we're in global mode and a site key appears, switch to pinned mode
-    if (!isPinned && changes[SITE_KEY] && changes[SITE_KEY].newValue) {
-      isPinned = true;
-      updatePinUI();
-      isLoading = true;
-      applyState(changes[SITE_KEY].newValue);
-      isLoading = false;
-    }
+      // Global mode: site key appeared -> switch to pinned
+      if (!isPinned && changes[SITE_KEY]?.newValue) {
+        isPinned = true;
+        updatePinUI();
+        isLoading = true;
+        applyState(changes[SITE_KEY].newValue);
+        isLoading = false;
+      }
 
-    // If we're pinned and site key is removed, switch to global
-    if (isPinned && changes[SITE_KEY] && !changes[SITE_KEY].newValue) {
-      isPinned = false;
-      updatePinUI();
-      chrome.storage.local.get([GLOBAL_KEY], (result) => {
-        if (result[GLOBAL_KEY]) {
-          isLoading = true;
-          applyState(result[GLOBAL_KEY]);
-          isLoading = false;
-        }
-      });
-    }
-  });
+      // Pinned mode: site key removed -> switch to global
+      if (isPinned && changes[SITE_KEY] && !changes[SITE_KEY].newValue) {
+        isPinned = false;
+        updatePinUI();
+        loadFromKey(GLOBAL_KEY);
+      }
+    });
+  } catch (e) {
+    console.log('Quadrant: storage listener unavailable');
+  }
 
-  // Run initial load
-  initLoad();
+  // ============================================
+  // MESSAGE LISTENER (for extension icon click)
+  // ============================================
 
-  // Listen for toggle messages
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'toggle') {
-      toggle();
-    }
-  });
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.action === 'toggle') {
+        toggleNote();
+      }
+    });
+  } catch (e) {
+    console.log('Quadrant: message listener unavailable');
+  }
+
+  // ============================================
+  // INIT: Load state immediately
+  // ============================================
+
+  loadState();
 })();

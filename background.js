@@ -1,16 +1,6 @@
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'inject') {
-    chrome.scripting.insertCSS({
-      target: { tabId: message.tabId },
-      files: ['content.css']
-    });
-
-    chrome.scripting.executeScript({
-      target: { tabId: message.tabId },
-      files: ['content.js']
-    }).then(() => {
-      // Send toggle message after injection
-      chrome.tabs.sendMessage(message.tabId, { action: 'toggle' });
-    });
-  }
+// Toggle quadrant note when extension icon is clicked
+chrome.action.onClicked.addListener((tab) => {
+  chrome.tabs.sendMessage(tab.id, { action: 'toggle' }).catch(() => {
+    // Content script not ready yet, ignore
+  });
 });
