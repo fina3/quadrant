@@ -219,10 +219,10 @@
           <span class="side-label">Not Important</span>
         </div>
         <div class="grid">
-          <div class="cell"><textarea data-cell="0" placeholder="Add tasks..."></textarea></div>
-          <div class="cell"><textarea data-cell="1" placeholder="Add tasks..."></textarea></div>
-          <div class="cell"><textarea data-cell="2" placeholder="Add tasks..."></textarea></div>
-          <div class="cell"><textarea data-cell="3" placeholder="Add tasks..."></textarea></div>
+          <div class="cell"><textarea data-cell="0" placeholder="Add tasks..." tabindex="0"></textarea></div>
+          <div class="cell"><textarea data-cell="1" placeholder="Add tasks..." tabindex="0"></textarea></div>
+          <div class="cell"><textarea data-cell="2" placeholder="Add tasks..." tabindex="0"></textarea></div>
+          <div class="cell"><textarea data-cell="3" placeholder="Add tasks..." tabindex="0"></textarea></div>
         </div>
       </div>
     </div>
@@ -346,9 +346,18 @@
     }, DEBOUNCE_MS);
   }
 
-  // Save on text input
+  // Save on text input + prevent host page from capturing keyboard events
   textareas.forEach(ta => {
     ta.addEventListener('input', save);
+
+    // Stop propagation of all keyboard events to prevent Gmail/etc from hijacking
+    ta.addEventListener('keydown', (e) => e.stopPropagation());
+    ta.addEventListener('keyup', (e) => e.stopPropagation());
+    ta.addEventListener('keypress', (e) => e.stopPropagation());
+
+    // Also stop focus/blur propagation
+    ta.addEventListener('focus', (e) => e.stopPropagation());
+    ta.addEventListener('blur', (e) => e.stopPropagation());
   });
 
   // Load saved state
@@ -381,5 +390,13 @@
     if (message.action === 'toggle') {
       toggle();
     }
+  });
+
+  // Stop all keyboard events from bubbling out of the note (capture phase)
+  // This prevents Gmail and other apps from intercepting keystrokes
+  ['keydown', 'keyup', 'keypress'].forEach(eventType => {
+    note.addEventListener(eventType, (e) => {
+      e.stopPropagation();
+    }, true);
   });
 })();
