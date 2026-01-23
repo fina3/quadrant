@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "description": "Eisenhower Matrix sticky notes for any webpage",
   "permissions": [
-    "storage"
+    "storage",
+    "scripting",
+    "activeTab"
   ],
   "action": {
     "default_icon": {
