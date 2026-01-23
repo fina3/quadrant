@@ -1,33 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Quadrant",
-  "version": "1.0.0",
-  "description": "Eisenhower Matrix sticky notes for any webpage",
-  "permissions": [
-    "storage",
-    "scripting",
-    "activeTab"
-  ],
+  "version": "1.0",
+  "description": "Simple Eisenhower Matrix sticky note",
+  "permissions": ["storage", "activeTab", "scripting"],
   "action": {
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
-  },
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "default_title": "Toggle Quadrant"
   },
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "exclude_matches": ["chrome://*/*", "chrome-extension://*/*", "about:*"],
+    "matches": ["http://*/*", "https://*/*"],
     "js": ["content.js"],
     "css": ["content.css"],
     "run_at": "document_end"
-  }]
+  }],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }
