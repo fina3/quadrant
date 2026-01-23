@@ -8,6 +8,7 @@
   let note = null;
   let shadowRoot = null;
   let isVisible = false;
+  let activeTextarea = null;
 
   // Create host and shadow DOM
   const host = document.createElement('div');
@@ -233,6 +234,59 @@
   const textareas = note.querySelectorAll('textarea');
   const header = note.querySelector('.header');
 
+  // ============================================
+  // KEYBOARD EVENT ISOLATION
+  // Prevents host pages (Gmail, Notion, Slack, etc.) from capturing keystrokes
+  // ============================================
+
+  const KEYBOARD_EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput'];
+  const ALL_EVENTS = [...KEYBOARD_EVENTS, 'paste', 'cut', 'copy', 'compositionstart', 'compositionend', 'compositionupdate'];
+
+  // Stop events at the note level (capture phase)
+  ALL_EVENTS.forEach(eventType => {
+    note.addEventListener(eventType, (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
+  });
+
+  // Stop events at the host element level
+  ALL_EVENTS.forEach(eventType => {
+    host.addEventListener(eventType, (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
+  });
+
+  // Intercept at window/document level when our textarea is focused
+  function windowKeyHandler(e) {
+    if (activeTextarea) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+  }
+
+  KEYBOARD_EVENTS.forEach(eventType => {
+    window.addEventListener(eventType, windowKeyHandler, true);
+    document.addEventListener(eventType, windowKeyHandler, true);
+  });
+
+  // Track active textarea
+  textareas.forEach(ta => {
+    ta.addEventListener('focus', () => {
+      activeTextarea = ta;
+    });
+    ta.addEventListener('blur', () => {
+      if (activeTextarea === ta) {
+        activeTextarea = null;
+      }
+    });
+  });
+
+  // ============================================
+  // CORE FUNCTIONALITY
+  // ============================================
+
   // Toggle visibility
   function toggle() {
     isVisible = !isVisible;
@@ -346,18 +400,9 @@
     }, DEBOUNCE_MS);
   }
 
-  // Save on text input + prevent host page from capturing keyboard events
+  // Save on text input
   textareas.forEach(ta => {
     ta.addEventListener('input', save);
-
-    // Stop propagation of all keyboard events to prevent Gmail/etc from hijacking
-    ta.addEventListener('keydown', (e) => e.stopPropagation());
-    ta.addEventListener('keyup', (e) => e.stopPropagation());
-    ta.addEventListener('keypress', (e) => e.stopPropagation());
-
-    // Also stop focus/blur propagation
-    ta.addEventListener('focus', (e) => e.stopPropagation());
-    ta.addEventListener('blur', (e) => e.stopPropagation());
   });
 
   // Load saved state
@@ -390,13 +435,5 @@
     if (message.action === 'toggle') {
       toggle();
     }
-  });
-
-  // Stop all keyboard events from bubbling out of the note (capture phase)
-  // This prevents Gmail and other apps from intercepting keystrokes
-  ['keydown', 'keyup', 'keypress'].forEach(eventType => {
-    note.addEventListener(eventType, (e) => {
-      e.stopPropagation();
-    }, true);
   });
 })();
