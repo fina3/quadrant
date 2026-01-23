@@ -7,24 +7,67 @@
   let saveTimeout = null;
 
   // ============================================
-  // DEBOUNCED SAVE - ONLY SAVES TEXT CONTENT
+  // SAFE STORAGE WRAPPERS
+  // ============================================
+
+  async function safeGet() {
+    try {
+      if (!chrome?.storage?.local) return null;
+      const result = await chrome.storage.local.get('quadrant_global');
+      return result.quadrant_global || null;
+    } catch (e) {
+      console.log('Quadrant: storage read failed', e.message);
+      return null;
+    }
+  }
+
+  async function safeSave(content) {
+    try {
+      if (!chrome?.storage?.local) return false;
+      await chrome.storage.local.set({ quadrant_global: content });
+      return true;
+    } catch (e) {
+      console.log('Quadrant: storage write failed', e.message);
+      return false;
+    }
+  }
+
+  // ============================================
+  // DEBOUNCED SAVE
   // ============================================
 
   function saveContent() {
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(async () => {
-      if (!chrome?.storage) return;
-
-      try {
-        const content = {
-          q1: shadowRoot.querySelector('[data-cell="q1"]')?.value || '',
-          q2: shadowRoot.querySelector('[data-cell="q2"]')?.value || '',
-          q3: shadowRoot.querySelector('[data-cell="q3"]')?.value || '',
-          q4: shadowRoot.querySelector('[data-cell="q4"]')?.value || ''
-        };
-        await chrome.storage.local.set({ quadrant_global: content });
-      } catch (e) {}
+      const content = {
+        q1: shadowRoot?.querySelector('[data-cell="q1"]')?.value || '',
+        q2: shadowRoot?.querySelector('[data-cell="q2"]')?.value || '',
+        q3: shadowRoot?.querySelector('[data-cell="q3"]')?.value || '',
+        q4: shadowRoot?.querySelector('[data-cell="q4"]')?.value || ''
+      };
+      const saved = await safeSave(content);
+      if (!saved) {
+        console.log('Quadrant: could not save, extension may need refresh');
+      }
     }, 300);
+  }
+
+  // ============================================
+  // LOAD CONTENT
+  // ============================================
+
+  async function loadContent() {
+    const content = await safeGet();
+    if (content) {
+      const q1 = shadowRoot?.querySelector('[data-cell="q1"]');
+      const q2 = shadowRoot?.querySelector('[data-cell="q2"]');
+      const q3 = shadowRoot?.querySelector('[data-cell="q3"]');
+      const q4 = shadowRoot?.querySelector('[data-cell="q4"]');
+      if (q1) q1.value = content.q1 || '';
+      if (q2) q2.value = content.q2 || '';
+      if (q3) q3.value = content.q3 || '';
+      if (q4) q4.value = content.q4 || '';
+    }
   }
 
   // ============================================
@@ -304,25 +347,20 @@
   }
 
   // ============================================
-  // OPEN QUADRANT - LOAD CONTENT AND SHOW
+  // TOGGLE QUADRANT
   // ============================================
 
-  async function openQuadrant() {
-    if (!note) createNote();
+  function toggleQuadrant() {
+    if (!note) {
+      createNote();
+    }
 
-    note.classList.add('visible');
-
-    // Load saved content
-    try {
-      const result = await chrome.storage.local.get('quadrant_global');
-      const content = result.quadrant_global || {};
-      if (content) {
-        shadowRoot.querySelector('[data-cell="q1"]').value = content.q1 || '';
-        shadowRoot.querySelector('[data-cell="q2"]').value = content.q2 || '';
-        shadowRoot.querySelector('[data-cell="q3"]').value = content.q3 || '';
-        shadowRoot.querySelector('[data-cell="q4"]').value = content.q4 || '';
-      }
-    } catch (e) {}
+    if (note.classList.contains('visible')) {
+      note.classList.remove('visible');
+    } else {
+      note.classList.add('visible');
+      loadContent(); // Always reload from storage when opening
+    }
   }
 
   // ============================================
@@ -332,11 +370,7 @@
   try {
     chrome.runtime.onMessage.addListener((message) => {
       if (message.action === 'toggle') {
-        if (note?.classList.contains('visible')) {
-          note.classList.remove('visible');
-        } else {
-          openQuadrant();
-        }
+        toggleQuadrant();
       }
     });
   } catch (e) {}
