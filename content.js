@@ -248,24 +248,31 @@
   function setupEventHandlers() {
     const header = note.querySelector('.header');
     const textareas = note.querySelectorAll('textarea');
-    const host = shadowRoot.host;
 
-    // Keyboard isolation - prevent page from capturing our keystrokes
-    const EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput', 'paste', 'cut', 'copy'];
-    EVENTS.forEach(evt => {
-      note.addEventListener(evt, e => { e.stopPropagation(); e.stopImmediatePropagation(); }, true);
-      host.addEventListener(evt, e => { e.stopPropagation(); e.stopImmediatePropagation(); }, true);
-    });
-
-    let activeTextarea = null;
-    ['keydown', 'keyup', 'keypress', 'input'].forEach(evt => {
-      window.addEventListener(evt, e => { if (activeTextarea) { e.stopPropagation(); e.stopImmediatePropagation(); } }, true);
-    });
-
-    // Debounced save on input
+    // Setup each textarea with event isolation
     textareas.forEach(ta => {
-      ta.addEventListener('focus', () => { activeTextarea = ta; });
-      ta.addEventListener('blur', () => { if (activeTextarea === ta) activeTextarea = null; });
+      // Ensure textarea is editable
+      ta.disabled = false;
+      ta.readOnly = false;
+
+      // Stop all keyboard events from bubbling to the page
+      ['keydown', 'keypress', 'keyup', 'input', 'beforeinput'].forEach(evt => {
+        ta.addEventListener(evt, (e) => {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }, true);
+      });
+
+      // Stop focus/click from being captured by page
+      ta.addEventListener('focus', (e) => {
+        e.stopPropagation();
+      }, true);
+
+      ta.addEventListener('click', (e) => {
+        e.stopPropagation();
+      }, true);
+
+      // Debounced save on input
       ta.addEventListener('input', () => {
         clearTimeout(saveTimeout);
         saveTimeout = setTimeout(saveContent, 300);
