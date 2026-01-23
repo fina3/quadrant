@@ -2,80 +2,53 @@
   if (window.__quadrantInitialized) return;
   window.__quadrantInitialized = true;
 
+  const STORAGE_KEY = 'quadrant_global';
   let note = null;
   let shadowRoot = null;
   let saveTimeout = null;
 
   // ============================================
-  // SAFE STORAGE WRAPPERS
+  // STORAGE FUNCTIONS
   // ============================================
 
-  async function safeGet() {
+  async function loadContent() {
     try {
-      if (!chrome?.storage?.local) {
-        console.log('Quadrant: chrome.storage not available');
-        return null;
-      }
-      const result = await chrome.storage.local.get('quadrant_global');
-      console.log('Quadrant LOADED:', JSON.stringify(result.quadrant_global));
-      return result.quadrant_global || null;
+      const result = await chrome.storage.local.get(STORAGE_KEY);
+      const data = result[STORAGE_KEY] || {};
+      const q1 = shadowRoot?.querySelector('[data-cell="q1"]');
+      const q2 = shadowRoot?.querySelector('[data-cell="q2"]');
+      const q3 = shadowRoot?.querySelector('[data-cell="q3"]');
+      const q4 = shadowRoot?.querySelector('[data-cell="q4"]');
+      if (q1) q1.value = data.q1 || '';
+      if (q2) q2.value = data.q2 || '';
+      if (q3) q3.value = data.q3 || '';
+      if (q4) q4.value = data.q4 || '';
     } catch (e) {
-      console.log('Quadrant: load FAILED', e.message);
-      return null;
+      console.log('Quadrant: load failed', e.message);
     }
   }
 
-  async function safeSave(content) {
+  async function saveContent() {
     try {
-      if (!chrome?.storage?.local) {
-        console.log('Quadrant: chrome.storage not available');
-        return false;
-      }
-      console.log('Quadrant SAVING:', JSON.stringify(content));
-      await chrome.storage.local.set({ quadrant_global: content });
-      console.log('Quadrant: save successful');
-      return true;
-    } catch (e) {
-      console.log('Quadrant: save FAILED', e.message);
-      return false;
-    }
-  }
-
-  // ============================================
-  // DEBOUNCED SAVE
-  // ============================================
-
-  function saveContent() {
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(async () => {
-      const content = {
+      const data = {
         q1: shadowRoot?.querySelector('[data-cell="q1"]')?.value || '',
         q2: shadowRoot?.querySelector('[data-cell="q2"]')?.value || '',
         q3: shadowRoot?.querySelector('[data-cell="q3"]')?.value || '',
         q4: shadowRoot?.querySelector('[data-cell="q4"]')?.value || ''
       };
-      const saved = await safeSave(content);
-      if (!saved) {
-        console.log('Quadrant: could not save, extension may need refresh');
-      }
-    }, 300);
+      await chrome.storage.local.set({ [STORAGE_KEY]: data });
+    } catch (e) {
+      console.log('Quadrant: save failed', e.message);
+    }
   }
 
-  // ============================================
-  // LOAD CONTENT
-  // ============================================
-
-  async function loadContent() {
-    const content = await safeGet();
-    if (content) {
-      const q1 = shadowRoot?.querySelector('[data-cell="q1"]');
-      const q2 = shadowRoot?.querySelector('[data-cell="q2"]');
-      const q3 = shadowRoot?.querySelector('[data-cell="q3"]');
-      const q4 = shadowRoot?.querySelector('[data-cell="q4"]');
-      if (q1) q1.value = content.q1 || '';
-      if (q2) q2.value = content.q2 || '';
-      if (q3) q3.value = content.q3 || '';
-      if (q4) q4.value = content.q4 || '';
+  async function clearContent() {
+    if (!confirm('Clear all tasks?')) return;
+    shadowRoot?.querySelectorAll('[data-cell]').forEach(ta => ta.value = '');
+    try {
+      await chrome.storage.local.remove(STORAGE_KEY);
+    } catch (e) {
+      console.log('Quadrant: clear failed', e.message);
     }
   }
 
@@ -116,13 +89,13 @@
       .note.visible { display: flex; }
 
       .header {
-        height: 16px;
-        min-height: 16px;
+        height: 20px;
+        min-height: 20px;
         background: #f0e098;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0 6px;
+        padding: 0 8px;
         cursor: grab;
         user-select: none;
       }
@@ -130,20 +103,19 @@
       .header.dragging { cursor: grabbing; }
 
       .header-title {
-        font-size: 9px;
-        font-weight: 600;
+        font-size: 10px;
+        font-weight: 700;
         color: #665;
-        text-transform: uppercase;
         letter-spacing: 0.5px;
       }
 
-      .header-controls { display: flex; align-items: center; gap: 4px; }
+      .header-controls { display: flex; align-items: center; gap: 6px; }
 
       .header-btn {
         background: none;
         border: none;
-        color: #887;
-        font-size: 9px;
+        color: #776;
+        font-size: 12px;
         line-height: 1;
         cursor: pointer;
         padding: 2px 4px;
@@ -151,10 +123,8 @@
       }
 
       .header-btn:hover { background: rgba(0,0,0,0.1); color: #443; }
-      .refresh-btn { font-size: 12px; }
-      .copy-btn { font-size: 11px; }
-      .clear-btn { font-size: 8px; text-transform: uppercase; }
-      .close-btn { font-size: 14px; padding: 0 3px; }
+      .clear-btn { font-size: 9px; font-weight: 600; }
+      .close-btn { font-size: 16px; padding: 0 2px; }
 
       .content {
         flex: 1;
@@ -240,12 +210,11 @@
     note.className = 'note';
     note.innerHTML = `
       <div class="header">
-        <span class="header-title">Quadrant</span>
+        <span class="header-title">QUADRANT</span>
         <div class="header-controls">
-          <button class="header-btn refresh-btn" title="Refresh from cloud">↻</button>
-          <button class="header-btn copy-btn" title="Copy to clipboard">📋</button>
-          <button class="header-btn clear-btn" title="Clear all">Clear</button>
-          <button class="header-btn close-btn" title="Hide">&times;</button>
+          <button class="header-btn refresh-btn" title="Refresh">↻</button>
+          <button class="header-btn clear-btn" title="Clear all">CLEAR</button>
+          <button class="header-btn close-btn" title="Close">&times;</button>
         </div>
       </div>
       <div class="content">
@@ -259,10 +228,10 @@
             <span class="side-label">Not Important</span>
           </div>
           <div class="grid">
-            <div class="cell"><textarea data-cell="q1" placeholder="Add tasks..." tabindex="0"></textarea></div>
-            <div class="cell"><textarea data-cell="q2" placeholder="Add tasks..." tabindex="0"></textarea></div>
-            <div class="cell"><textarea data-cell="q3" placeholder="Add tasks..." tabindex="0"></textarea></div>
-            <div class="cell"><textarea data-cell="q4" placeholder="Add tasks..." tabindex="0"></textarea></div>
+            <div class="cell"><textarea data-cell="q1" placeholder="Do first..." tabindex="0"></textarea></div>
+            <div class="cell"><textarea data-cell="q2" placeholder="Schedule..." tabindex="0"></textarea></div>
+            <div class="cell"><textarea data-cell="q3" placeholder="Delegate..." tabindex="0"></textarea></div>
+            <div class="cell"><textarea data-cell="q4" placeholder="Eliminate..." tabindex="0"></textarea></div>
           </div>
         </div>
       </div>
@@ -281,7 +250,7 @@
     const textareas = note.querySelectorAll('textarea');
     const host = shadowRoot.host;
 
-    // Keyboard isolation
+    // Keyboard isolation - prevent page from capturing our keystrokes
     const EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput', 'paste', 'cut', 'copy'];
     EVENTS.forEach(evt => {
       note.addEventListener(evt, e => { e.stopPropagation(); e.stopImmediatePropagation(); }, true);
@@ -293,60 +262,35 @@
       window.addEventListener(evt, e => { if (activeTextarea) { e.stopPropagation(); e.stopImmediatePropagation(); } }, true);
     });
 
+    // Debounced save on input
     textareas.forEach(ta => {
       ta.addEventListener('focus', () => { activeTextarea = ta; });
       ta.addEventListener('blur', () => { if (activeTextarea === ta) activeTextarea = null; });
-      ta.addEventListener('input', saveContent);
+      ta.addEventListener('input', () => {
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveContent, 300);
+      });
     });
 
-    // Close
+    // Refresh button
+    note.querySelector('.refresh-btn').onclick = (e) => {
+      e.stopPropagation();
+      loadContent();
+    };
+
+    // Clear button
+    note.querySelector('.clear-btn').onclick = (e) => {
+      e.stopPropagation();
+      clearContent();
+    };
+
+    // Close button
     note.querySelector('.close-btn').onclick = (e) => {
       e.stopPropagation();
       note.classList.remove('visible');
     };
 
-    // Copy
-    note.querySelector('.copy-btn').onclick = (e) => {
-      e.stopPropagation();
-      const labels = ['URGENT + IMPORTANT', 'NOT URGENT + IMPORTANT', 'URGENT + NOT IMPORTANT', 'NOT URGENT + NOT IMPORTANT'];
-      let text = '';
-      ['q1', 'q2', 'q3', 'q4'].forEach((cell, i) => {
-        const val = shadowRoot.querySelector(`[data-cell="${cell}"]`)?.value?.trim();
-        if (val) text += labels[i] + ':\n' + val + '\n\n';
-      });
-      if (text) navigator.clipboard.writeText(text.trim());
-    };
-
-    // Refresh
-    note.querySelector('.refresh-btn').onclick = async (e) => {
-      e.stopPropagation();
-      await loadContent();
-      console.log('Quadrant: manually refreshed');
-    };
-
-    // Clear
-    note.querySelector('.clear-btn').onclick = async (e) => {
-      e.stopPropagation();
-      if (!confirm('Clear all tasks from Quadrant?')) return;
-
-      // Clear textareas visually
-      textareas.forEach(ta => { ta.value = ''; });
-
-      // Clear global storage and VERIFY it worked
-      try {
-        const emptyContent = { q1: '', q2: '', q3: '', q4: '' };
-        await chrome.storage.local.set({ quadrant_global: emptyContent });
-
-        // Verify
-        const check = await chrome.storage.local.get('quadrant_global');
-        console.log('Quadrant CLEARED, verified:', JSON.stringify(check.quadrant_global));
-      } catch (err) {
-        console.log('Quadrant: clear FAILED', err.message);
-        alert('Clear failed - extension may need refresh');
-      }
-    };
-
-    // Drag
+    // Drag functionality
     let dragging = false, startX, startY, origX, origY;
     header.onmousedown = (e) => {
       if (e.target.closest('.header-btn')) return;
@@ -378,7 +322,7 @@
   }
 
   // ============================================
-  // TOGGLE QUADRANT
+  // TOGGLE
   // ============================================
 
   function toggleQuadrant() {
@@ -390,12 +334,12 @@
       note.classList.remove('visible');
     } else {
       note.classList.add('visible');
-      loadContent(); // Always reload from storage when opening
+      loadContent(); // Always fetch latest when opening
     }
   }
 
   // ============================================
-  // LISTEN FOR EXTENSION ICON CLICK
+  // MESSAGE LISTENER
   // ============================================
 
   try {
