@@ -2,13 +2,17 @@
   if (window.__quadrantInitialized) return;
   window.__quadrantInitialized = true;
 
-  const STORAGE_KEY = 'quadrant_' + location.hostname;
+  const GLOBAL_KEY = 'quadrant_global';
+  const SITE_KEY = 'quadrant_site_' + location.hostname;
   const DEBOUNCE_MS = 500;
+
   let saveTimeout = null;
   let note = null;
   let shadowRoot = null;
   let isVisible = false;
   let activeTextarea = null;
+  let isPinned = false;
+  let pinBtn = null;
 
   // Create host and shadow DOM
   const host = document.createElement('div');
@@ -95,6 +99,8 @@
     }
 
     .copy-btn { font-size: 11px; }
+    .pin-btn { font-size: 10px; opacity: 0.5; }
+    .pin-btn.pinned { opacity: 1; }
     .clear-btn { font-size: 8px; text-transform: uppercase; }
     .close-btn { font-size: 14px; padding: 0 3px; }
 
@@ -205,6 +211,7 @@
       <span class="header-title">Quadrant</span>
       <div class="header-controls">
         <button class="header-btn copy-btn" title="Copy to clipboard">📋</button>
+        <button class="header-btn pin-btn" title="Pin to this site">📌</button>
         <button class="header-btn clear-btn" title="Clear all">Clear</button>
         <button class="header-btn close-btn" title="Hide">&times;</button>
       </div>
@@ -233,6 +240,7 @@
 
   const textareas = note.querySelectorAll('textarea');
   const header = note.querySelector('.header');
+  pinBtn = note.querySelector('.pin-btn');
 
   // ============================================
   // KEYBOARD EVENT ISOLATION
@@ -284,6 +292,24 @@
   });
 
   // ============================================
+  // STORAGE KEY LOGIC
+  // ============================================
+
+  function getCurrentStorageKey() {
+    return isPinned ? SITE_KEY : GLOBAL_KEY;
+  }
+
+  function updatePinUI() {
+    if (isPinned) {
+      pinBtn.classList.add('pinned');
+      pinBtn.title = 'Unpin from this site (using site-specific note)';
+    } else {
+      pinBtn.classList.remove('pinned');
+      pinBtn.title = 'Pin to this site (using global note)';
+    }
+  }
+
+  // ============================================
   // CORE FUNCTIONALITY
   // ============================================
 
@@ -329,6 +355,26 @@
     });
     if (text) {
       navigator.clipboard.writeText(text.trim());
+    }
+  };
+
+  // Pin button
+  pinBtn.onclick = (e) => {
+    e.stopPropagation();
+
+    if (isPinned) {
+      // Unpinning: delete site-specific entry, switch to global
+      chrome.storage.local.remove(SITE_KEY, () => {
+        isPinned = false;
+        updatePinUI();
+        // Load global note
+        loadFromStorage(GLOBAL_KEY);
+      });
+    } else {
+      // Pinning: copy current state to site-specific entry
+      isPinned = true;
+      updatePinUI();
+      save(); // This will save to SITE_KEY now
     }
   };
 
@@ -396,7 +442,7 @@
       textareas.forEach(ta => {
         state.cells[ta.dataset.cell] = ta.value;
       });
-      chrome.storage.local.set({ [STORAGE_KEY]: state });
+      chrome.storage.local.set({ [getCurrentStorageKey()]: state });
     }, DEBOUNCE_MS);
   }
 
@@ -405,30 +451,72 @@
     ta.addEventListener('input', save);
   });
 
-  // Load saved state
-  chrome.storage.local.get([STORAGE_KEY], (result) => {
-    const state = result[STORAGE_KEY];
-    if (state) {
-      if (state.x !== undefined) note.style.left = state.x + 'px';
-      if (state.y !== undefined) note.style.top = state.y + 'px';
-      if (state.width) note.style.width = state.width + 'px';
-      if (state.height) note.style.height = state.height + 'px';
-      if (state.cells) {
-        textareas.forEach(ta => {
-          if (state.cells[ta.dataset.cell]) {
-            ta.value = state.cells[ta.dataset.cell];
-          }
-        });
+  // Load state from a specific key
+  function loadFromStorage(key) {
+    chrome.storage.local.get([key], (result) => {
+      const state = result[key];
+      if (state) {
+        if (state.x !== undefined) note.style.left = state.x + 'px';
+        if (state.y !== undefined) note.style.top = state.y + 'px';
+        if (state.width) note.style.width = state.width + 'px';
+        if (state.height) note.style.height = state.height + 'px';
+        if (state.cells) {
+          textareas.forEach(ta => {
+            ta.value = state.cells[ta.dataset.cell] || '';
+          });
+        }
+        if (state.visible) {
+          show();
+        }
+      } else {
+        // Default position centered, clear textareas
+        note.style.left = (window.innerWidth - 300) / 2 + 'px';
+        note.style.top = (window.innerHeight - 300) / 2 + 'px';
+        textareas.forEach(ta => ta.value = '');
       }
-      if (state.visible) {
-        show();
+    });
+  }
+
+  // Initial load: check if site has pinned note
+  function initLoad() {
+    chrome.storage.local.get([SITE_KEY, GLOBAL_KEY], (result) => {
+      if (result[SITE_KEY]) {
+        // Site has a pinned note
+        isPinned = true;
+        updatePinUI();
+        applyState(result[SITE_KEY]);
+      } else if (result[GLOBAL_KEY]) {
+        // Use global note
+        isPinned = false;
+        updatePinUI();
+        applyState(result[GLOBAL_KEY]);
+      } else {
+        // No saved state, use defaults
+        isPinned = false;
+        updatePinUI();
+        note.style.left = (window.innerWidth - 300) / 2 + 'px';
+        note.style.top = (window.innerHeight - 300) / 2 + 'px';
       }
-    } else {
-      // Default position centered
-      note.style.left = (window.innerWidth - 300) / 2 + 'px';
-      note.style.top = (window.innerHeight - 300) / 2 + 'px';
+    });
+  }
+
+  function applyState(state) {
+    if (state.x !== undefined) note.style.left = state.x + 'px';
+    if (state.y !== undefined) note.style.top = state.y + 'px';
+    if (state.width) note.style.width = state.width + 'px';
+    if (state.height) note.style.height = state.height + 'px';
+    if (state.cells) {
+      textareas.forEach(ta => {
+        ta.value = state.cells[ta.dataset.cell] || '';
+      });
     }
-  });
+    if (state.visible) {
+      show();
+    }
+  }
+
+  // Run initial load
+  initLoad();
 
   // Listen for toggle messages
   chrome.runtime.onMessage.addListener((message) => {
