@@ -23,6 +23,7 @@
   },
   "content_scripts": [{
     "matches": ["<all_urls>"],
+    "exclude_matches": ["chrome://*/*", "chrome-extension://*/*", "about:*"],
     "js": ["content.js"],
     "css": ["content.css"],
     "run_at": "document_end"
