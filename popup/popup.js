@@ -12,24 +12,18 @@ async function loadStats() {
   const statsEl = document.getElementById('stats');
 
   try {
-    const storage = await chrome.storage.local.get(null);
-    const keys = Object.keys(storage).filter(k => k.startsWith('notes_'));
-
-    let totalNotes = 0;
-    keys.forEach(key => {
-      const notes = storage[key];
-      if (notes) {
-        totalNotes += (notes.doFirst?.length || 0);
-        totalNotes += (notes.schedule?.length || 0);
-        totalNotes += (notes.delegate?.length || 0);
-        totalNotes += (notes.eliminate?.length || 0);
-      }
+    const response = await chrome.runtime.sendMessage({
+      action: 'getAllDomainStats'
     });
 
-    statsEl.innerHTML = `
-      <p><strong>Domains with notes:</strong> ${keys.length}</p>
-      <p><strong>Total tasks:</strong> ${totalNotes}</p>
-    `;
+    if (response && response.success) {
+      statsEl.innerHTML = `
+        <p><strong>Domains with notes:</strong> ${response.stats.domainCount}</p>
+        <p><strong>Total notes:</strong> ${response.stats.totalNotes}</p>
+      `;
+    } else {
+      statsEl.innerHTML = '<p>Unable to load stats</p>';
+    }
   } catch (error) {
     statsEl.innerHTML = '<p>Unable to load stats</p>';
     console.error('Failed to load stats:', error);

@@ -8,8 +8,11 @@
   if (window.quadrantNoteInitialized) return;
   window.quadrantNoteInitialized = true;
 
+  const MAX_NOTES_PER_QUADRANT = 20;
+  const DEBOUNCE_DELAY = 300;
+
   let isOverlayVisible = false;
-  let isDragging = false;
+  let isDraggingOverlay = false;
   let dragOffset = { x: 0, y: 0 };
   let currentDomain = window.location.hostname;
 
@@ -18,14 +21,41 @@
   let overlayHost = null;
   let shadowRoot = null;
   let overlay = null;
+  let contextMenu = null;
 
-  // Note data structure
-  let notes = {
-    doFirst: [],
-    schedule: [],
-    delegate: [],
-    eliminate: []
-  };
+  // Note dragging state
+  let draggedNote = null;
+  let draggedNoteOffset = { x: 0, y: 0 };
+  let isDraggingNote = false;
+
+  // Notes storage: { id: { id, text, quadrant, x, y, created } }
+  let notes = {};
+
+  // Debounce timer
+  let saveTimer = null;
+
+  /**
+   * Generate UUID v4
+   */
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * Debounced save to storage
+   */
+  function debouncedSave() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+    }
+    saveTimer = setTimeout(() => {
+      saveNotes();
+    }, DEBOUNCE_DELAY);
+  }
 
   /**
    * Initialize the extension
@@ -174,25 +204,22 @@
         /* Quadrant cells */
         .quadrant {
           position: relative;
-          padding: 24px 8px 8px 8px;
-          display: flex;
-          flex-direction: column;
           overflow: hidden;
         }
 
-        .quadrant.do-first {
+        .quadrant[data-quadrant="1"] {
           background: #ffcccc;
         }
 
-        .quadrant.schedule {
+        .quadrant[data-quadrant="2"] {
           background: #ccffcc;
         }
 
-        .quadrant.delegate {
+        .quadrant[data-quadrant="3"] {
           background: #ffffcc;
         }
 
-        .quadrant.eliminate {
+        .quadrant[data-quadrant="4"] {
           background: #ccccff;
         }
 
@@ -212,92 +239,91 @@
           text-transform: uppercase;
           font-weight: 600;
           letter-spacing: 0.5px;
+          pointer-events: none;
+          z-index: 1;
         }
 
-        /* Notes container */
-        .notes-container {
-          flex: 1;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .notes-container::-webkit-scrollbar {
-          width: 4px;
-        }
-
-        .notes-container::-webkit-scrollbar-thumb {
-          background: rgba(0, 0, 0, 0.2);
-          border-radius: 2px;
-        }
-
-        /* Note item */
-        .note-item {
-          background: rgba(255, 255, 255, 0.7);
-          padding: 4px 6px;
-          border-radius: 3px;
-          font-size: 11px;
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 4px;
+        /* Sticky note */
+        .sticky-note {
+          position: absolute;
+          width: 80px;
+          height: 60px;
+          background: #fff9b1;
+          box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.15);
           cursor: grab;
+          user-select: none;
+          z-index: 10;
+          display: flex;
+          align-items: flex-start;
+          justify-content: flex-start;
+          overflow: hidden;
         }
 
-        .note-item.dragging {
-          opacity: 0.5;
+        .sticky-note:hover {
+          box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.2);
         }
 
-        .note-text {
-          flex: 1;
-          word-break: break-word;
+        .sticky-note.dragging {
+          cursor: grabbing;
+          opacity: 0.8;
+          z-index: 100;
+          box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .sticky-note-content {
+          width: 100%;
+          height: 100%;
+          padding: 4px;
+          font-size: 11px;
           line-height: 1.3;
           color: #333;
+          outline: none;
+          overflow: hidden;
+          word-break: break-word;
+          cursor: text;
         }
 
-        .note-delete {
-          background: none;
-          border: none;
+        .sticky-note-content:empty::before {
+          content: 'Type here...';
           color: #999;
-          cursor: pointer;
+          font-style: italic;
+        }
+
+        /* Context menu */
+        .context-menu {
+          position: fixed;
+          background: white;
+          border-radius: 4px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+          padding: 4px 0;
+          min-width: 120px;
+          z-index: 1000;
+          display: none;
+          pointer-events: auto;
+        }
+
+        .context-menu.visible {
+          display: block;
+        }
+
+        .context-menu-item {
+          padding: 6px 12px;
           font-size: 12px;
-          padding: 0;
-          line-height: 1;
-          opacity: 0;
-          transition: opacity 0.2s;
+          color: #333;
+          cursor: pointer;
+          transition: background 0.15s;
         }
 
-        .note-item:hover .note-delete {
-          opacity: 1;
+        .context-menu-item:hover {
+          background: #f0f0f0;
         }
 
-        .note-delete:hover {
+        .context-menu-item.delete {
           color: #c00;
         }
 
-        /* Input area */
-        .input-area {
-          margin-top: 4px;
-        }
-
-        .input-area input {
-          width: 100%;
-          padding: 4px 6px;
-          border: 1px solid rgba(0, 0, 0, 0.15);
-          border-radius: 3px;
-          font-size: 11px;
-          background: rgba(255, 255, 255, 0.8);
-        }
-
-        .input-area input:focus {
-          outline: none;
-          border-color: #667eea;
-          background: white;
-        }
-
-        .input-area input::placeholder {
-          color: #999;
+        .context-menu-item.delete:hover {
+          background: #fee;
         }
       </style>
 
@@ -307,39 +333,28 @@
           <button class="close-btn" title="Close">&times;</button>
         </div>
         <div class="grid">
-          <div class="quadrant do-first" data-quadrant="doFirst">
+          <div class="quadrant" data-quadrant="1">
             <span class="quadrant-label">Do First</span>
-            <div class="notes-container" data-quadrant="doFirst"></div>
-            <div class="input-area">
-              <input type="text" placeholder="Add task..." data-quadrant="doFirst">
-            </div>
           </div>
-          <div class="quadrant schedule" data-quadrant="schedule">
+          <div class="quadrant" data-quadrant="2">
             <span class="quadrant-label">Schedule</span>
-            <div class="notes-container" data-quadrant="schedule"></div>
-            <div class="input-area">
-              <input type="text" placeholder="Add task..." data-quadrant="schedule">
-            </div>
           </div>
-          <div class="quadrant delegate" data-quadrant="delegate">
+          <div class="quadrant" data-quadrant="3">
             <span class="quadrant-label">Delegate</span>
-            <div class="notes-container" data-quadrant="delegate"></div>
-            <div class="input-area">
-              <input type="text" placeholder="Add task..." data-quadrant="delegate">
-            </div>
           </div>
-          <div class="quadrant eliminate" data-quadrant="eliminate">
+          <div class="quadrant" data-quadrant="4">
             <span class="quadrant-label">Eliminate</span>
-            <div class="notes-container" data-quadrant="eliminate"></div>
-            <div class="input-area">
-              <input type="text" placeholder="Add task..." data-quadrant="eliminate">
-            </div>
           </div>
         </div>
+      </div>
+
+      <div class="context-menu">
+        <div class="context-menu-item delete">Delete note</div>
       </div>
     `;
 
     overlay = shadowRoot.querySelector('.overlay');
+    contextMenu = shadowRoot.querySelector('.context-menu');
 
     // Set initial position (centered)
     overlay.style.left = `${(window.innerWidth - 420) / 2}px`;
@@ -355,41 +370,56 @@
   function setupOverlayEvents() {
     const header = shadowRoot.querySelector('.header');
     const closeBtn = shadowRoot.querySelector('.close-btn');
+    const quadrants = shadowRoot.querySelectorAll('.quadrant');
 
     // Close button
     closeBtn.addEventListener('click', toggleOverlay);
 
-    // Dragging
-    header.addEventListener('mousedown', startDrag);
-    document.addEventListener('mousemove', drag);
-    document.addEventListener('mouseup', stopDrag);
+    // Header dragging
+    header.addEventListener('mousedown', startOverlayDrag);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
 
-    // Input handling for each quadrant
-    const inputs = shadowRoot.querySelectorAll('.input-area input');
-    inputs.forEach(input => {
-      input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && input.value.trim()) {
-          addNote(input.dataset.quadrant, input.value.trim());
-          input.value = '';
-        }
-      });
+    // Quadrant events
+    quadrants.forEach(quadrant => {
+      // Double-click to create note
+      quadrant.addEventListener('dblclick', handleQuadrantDoubleClick);
+
+      // Drag over/drop for notes
+      quadrant.addEventListener('dragover', (e) => e.preventDefault());
+      quadrant.addEventListener('dragenter', handleDragEnter);
+      quadrant.addEventListener('dragleave', handleDragLeave);
     });
 
-    // Setup drop zones
-    const quadrants = shadowRoot.querySelectorAll('.quadrant');
-    quadrants.forEach(quadrant => {
-      quadrant.addEventListener('dragover', handleDragOver);
-      quadrant.addEventListener('dragleave', handleDragLeave);
-      quadrant.addEventListener('drop', handleDrop);
+    // Hide context menu on click elsewhere
+    shadowRoot.addEventListener('click', (e) => {
+      if (!e.target.closest('.context-menu')) {
+        hideContextMenu();
+      }
+    });
+
+    // Context menu delete action
+    shadowRoot.querySelector('.context-menu-item.delete').addEventListener('click', () => {
+      if (contextMenu.targetNoteId) {
+        deleteNote(contextMenu.targetNoteId);
+        hideContextMenu();
+      }
+    });
+
+    // Prevent context menu on overlay background
+    overlay.addEventListener('contextmenu', (e) => {
+      if (!e.target.closest('.sticky-note')) {
+        e.preventDefault();
+      }
     });
   }
 
   /**
    * Start dragging the overlay
    */
-  function startDrag(e) {
+  function startOverlayDrag(e) {
     if (e.target.closest('.close-btn')) return;
-    isDragging = true;
+    isDraggingOverlay = true;
     const rect = overlay.getBoundingClientRect();
     dragOffset.x = e.clientX - rect.left;
     dragOffset.y = e.clientY - rect.top;
@@ -397,31 +427,244 @@
   }
 
   /**
-   * Handle drag movement
+   * Handle mouse move for both overlay and note dragging
    */
-  function drag(e) {
-    if (!isDragging) return;
-    e.preventDefault();
+  function handleMouseMove(e) {
+    if (isDraggingOverlay) {
+      e.preventDefault();
+      let newX = e.clientX - dragOffset.x;
+      let newY = e.clientY - dragOffset.y;
+      newX = Math.max(0, Math.min(newX, window.innerWidth - 420));
+      newY = Math.max(0, Math.min(newY, window.innerHeight - 420));
+      overlay.style.left = `${newX}px`;
+      overlay.style.top = `${newY}px`;
+    }
 
-    let newX = e.clientX - dragOffset.x;
-    let newY = e.clientY - dragOffset.y;
+    if (isDraggingNote && draggedNote) {
+      e.preventDefault();
+      const overlayRect = overlay.getBoundingClientRect();
+      const gridRect = shadowRoot.querySelector('.grid').getBoundingClientRect();
 
-    // Keep within viewport bounds
-    newX = Math.max(0, Math.min(newX, window.innerWidth - 420));
-    newY = Math.max(0, Math.min(newY, window.innerHeight - 420));
+      // Calculate position relative to grid
+      let x = e.clientX - overlayRect.left - draggedNoteOffset.x;
+      let y = e.clientY - overlayRect.top - 20 - draggedNoteOffset.y; // 20px header
 
-    overlay.style.left = `${newX}px`;
-    overlay.style.top = `${newY}px`;
+      // Find which quadrant we're over
+      const quadrants = shadowRoot.querySelectorAll('.quadrant');
+      let targetQuadrant = null;
+
+      quadrants.forEach(q => {
+        const rect = q.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          targetQuadrant = q;
+        }
+      });
+
+      if (targetQuadrant) {
+        const qRect = targetQuadrant.getBoundingClientRect();
+        const relX = e.clientX - qRect.left - draggedNoteOffset.x;
+        const relY = e.clientY - qRect.top - draggedNoteOffset.y;
+
+        // Constrain within quadrant
+        const noteX = Math.max(0, Math.min(relX, qRect.width - 80));
+        const noteY = Math.max(0, Math.min(relY, qRect.height - 60));
+
+        // Temporarily position note in the target quadrant
+        const currentQuadrant = draggedNote.parentElement;
+        if (currentQuadrant !== targetQuadrant) {
+          targetQuadrant.appendChild(draggedNote);
+        }
+
+        draggedNote.style.left = `${noteX}px`;
+        draggedNote.style.top = `${noteY}px`;
+      }
+    }
   }
 
   /**
-   * Stop dragging
+   * Handle mouse up
    */
-  function stopDrag() {
-    if (isDragging) {
-      isDragging = false;
+  function handleMouseUp(e) {
+    if (isDraggingOverlay) {
+      isDraggingOverlay = false;
       shadowRoot.querySelector('.header').classList.remove('dragging');
     }
+
+    if (isDraggingNote && draggedNote) {
+      draggedNote.classList.remove('dragging');
+
+      // Update note data
+      const noteId = draggedNote.dataset.noteId;
+      const note = notes[noteId];
+      if (note) {
+        const quadrant = draggedNote.parentElement;
+        const newQuadrant = parseInt(quadrant.dataset.quadrant);
+
+        note.quadrant = newQuadrant;
+        note.x = parseInt(draggedNote.style.left) || 0;
+        note.y = parseInt(draggedNote.style.top) || 0;
+
+        debouncedSave();
+      }
+
+      // Remove drag-over highlight from all quadrants
+      shadowRoot.querySelectorAll('.quadrant').forEach(q => {
+        q.classList.remove('drag-over');
+      });
+
+      isDraggingNote = false;
+      draggedNote = null;
+    }
+  }
+
+  /**
+   * Handle drag enter on quadrant
+   */
+  function handleDragEnter(e) {
+    if (isDraggingNote) {
+      e.currentTarget.classList.add('drag-over');
+    }
+  }
+
+  /**
+   * Handle drag leave on quadrant
+   */
+  function handleDragLeave(e) {
+    // Only remove if actually leaving the quadrant
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top || e.clientY > rect.bottom) {
+      e.currentTarget.classList.remove('drag-over');
+    }
+  }
+
+  /**
+   * Handle double-click on quadrant to create note
+   */
+  function handleQuadrantDoubleClick(e) {
+    if (e.target.closest('.sticky-note')) return;
+
+    const quadrant = e.currentTarget;
+    const quadrantNum = parseInt(quadrant.dataset.quadrant);
+
+    // Check max notes limit
+    const notesInQuadrant = Object.values(notes).filter(n => n.quadrant === quadrantNum);
+    if (notesInQuadrant.length >= MAX_NOTES_PER_QUADRANT) {
+      return;
+    }
+
+    const rect = quadrant.getBoundingClientRect();
+    let x = e.clientX - rect.left - 40; // Center the note on click
+    let y = e.clientY - rect.top - 30;
+
+    // Constrain within quadrant
+    x = Math.max(0, Math.min(x, rect.width - 80));
+    y = Math.max(0, Math.min(y, rect.height - 60));
+
+    const note = {
+      id: generateUUID(),
+      text: '',
+      quadrant: quadrantNum,
+      x: x,
+      y: y,
+      created: Date.now()
+    };
+
+    notes[note.id] = note;
+    createNoteElement(note, quadrant);
+    debouncedSave();
+
+    // Focus the new note
+    setTimeout(() => {
+      const noteEl = shadowRoot.querySelector(`[data-note-id="${note.id}"] .sticky-note-content`);
+      if (noteEl) {
+        noteEl.focus();
+      }
+    }, 0);
+  }
+
+  /**
+   * Create a sticky note DOM element
+   */
+  function createNoteElement(note, quadrant) {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'sticky-note';
+    noteEl.dataset.noteId = note.id;
+    noteEl.style.left = `${note.x}px`;
+    noteEl.style.top = `${note.y}px`;
+
+    const content = document.createElement('div');
+    content.className = 'sticky-note-content';
+    content.contentEditable = 'true';
+    content.textContent = note.text;
+
+    // Handle text changes
+    content.addEventListener('input', () => {
+      notes[note.id].text = content.textContent;
+      debouncedSave();
+    });
+
+    // Prevent dragging when editing
+    content.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+
+    // Handle note dragging
+    noteEl.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.sticky-note-content') && document.activeElement === content) {
+        return; // Don't drag while editing
+      }
+
+      e.preventDefault();
+      isDraggingNote = true;
+      draggedNote = noteEl;
+      noteEl.classList.add('dragging');
+
+      const rect = noteEl.getBoundingClientRect();
+      draggedNoteOffset.x = e.clientX - rect.left;
+      draggedNoteOffset.y = e.clientY - rect.top;
+    });
+
+    // Context menu
+    noteEl.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, note.id);
+    });
+
+    noteEl.appendChild(content);
+    quadrant.appendChild(noteEl);
+  }
+
+  /**
+   * Show context menu
+   */
+  function showContextMenu(x, y, noteId) {
+    const overlayRect = overlay.getBoundingClientRect();
+    contextMenu.style.left = `${x - overlayRect.left}px`;
+    contextMenu.style.top = `${y - overlayRect.top}px`;
+    contextMenu.targetNoteId = noteId;
+    contextMenu.classList.add('visible');
+  }
+
+  /**
+   * Hide context menu
+   */
+  function hideContextMenu() {
+    contextMenu.classList.remove('visible');
+    contextMenu.targetNoteId = null;
+  }
+
+  /**
+   * Delete a note
+   */
+  function deleteNote(noteId) {
+    const noteEl = shadowRoot.querySelector(`[data-note-id="${noteId}"]`);
+    if (noteEl) {
+      noteEl.remove();
+    }
+    delete notes[noteId];
+    debouncedSave();
   }
 
   /**
@@ -430,55 +673,13 @@
   function toggleOverlay() {
     isOverlayVisible = !isOverlayVisible;
     overlay.classList.toggle('visible', isOverlayVisible);
+    hideContextMenu();
 
     // Update button state
     const btnShadow = buttonHost.shadowRoot;
     if (btnShadow) {
       btnShadow.querySelector('.toggle-btn').classList.toggle('active', isOverlayVisible);
     }
-  }
-
-  // Drag and drop state
-  let draggedNote = null;
-  let draggedQuadrant = null;
-
-  /**
-   * Handle drag over quadrant
-   */
-  function handleDragOver(e) {
-    e.preventDefault();
-    e.currentTarget.classList.add('drag-over');
-  }
-
-  /**
-   * Handle drag leave quadrant
-   */
-  function handleDragLeave(e) {
-    e.currentTarget.classList.remove('drag-over');
-  }
-
-  /**
-   * Handle drop on quadrant
-   */
-  function handleDrop(e) {
-    e.preventDefault();
-    e.currentTarget.classList.remove('drag-over');
-
-    const targetQuadrant = e.currentTarget.dataset.quadrant;
-
-    if (draggedNote && draggedQuadrant && targetQuadrant !== draggedQuadrant) {
-      // Move note to new quadrant
-      const noteIndex = notes[draggedQuadrant].findIndex(n => n.id === draggedNote);
-      if (noteIndex !== -1) {
-        const [note] = notes[draggedQuadrant].splice(noteIndex, 1);
-        notes[targetQuadrant].push(note);
-        renderAllNotes();
-        saveNotes();
-      }
-    }
-
-    draggedNote = null;
-    draggedQuadrant = null;
   }
 
   /**
@@ -491,7 +692,7 @@
         domain: currentDomain
       });
 
-      if (response && response.success) {
+      if (response && response.success && response.notes) {
         notes = response.notes;
         renderAllNotes();
       }
@@ -516,77 +717,19 @@
   }
 
   /**
-   * Add a note to a quadrant
-   */
-  function addNote(quadrant, text) {
-    const note = {
-      id: Date.now().toString(),
-      text: text,
-      createdAt: new Date().toISOString()
-    };
-    notes[quadrant].push(note);
-    renderNotes(quadrant);
-    saveNotes();
-  }
-
-  /**
-   * Delete a note from a quadrant
-   */
-  function deleteNote(quadrant, noteId) {
-    notes[quadrant] = notes[quadrant].filter(n => n.id !== noteId);
-    renderNotes(quadrant);
-    saveNotes();
-  }
-
-  /**
-   * Render notes for a specific quadrant
-   */
-  function renderNotes(quadrant) {
-    const container = shadowRoot.querySelector(`.notes-container[data-quadrant="${quadrant}"]`);
-    container.innerHTML = '';
-
-    notes[quadrant].forEach(note => {
-      const noteEl = document.createElement('div');
-      noteEl.className = 'note-item';
-      noteEl.draggable = true;
-      noteEl.innerHTML = `
-        <span class="note-text">${escapeHtml(note.text)}</span>
-        <button class="note-delete" data-id="${note.id}">&times;</button>
-      `;
-
-      // Drag events for note reordering
-      noteEl.addEventListener('dragstart', (e) => {
-        draggedNote = note.id;
-        draggedQuadrant = quadrant;
-        noteEl.classList.add('dragging');
-      });
-
-      noteEl.addEventListener('dragend', () => {
-        noteEl.classList.remove('dragging');
-      });
-
-      noteEl.querySelector('.note-delete').addEventListener('click', () => {
-        deleteNote(quadrant, note.id);
-      });
-
-      container.appendChild(noteEl);
-    });
-  }
-
-  /**
-   * Render all quadrants
+   * Render all notes from storage
    */
   function renderAllNotes() {
-    ['doFirst', 'schedule', 'delegate', 'eliminate'].forEach(renderNotes);
-  }
+    // Clear existing notes
+    shadowRoot.querySelectorAll('.sticky-note').forEach(el => el.remove());
 
-  /**
-   * Escape HTML to prevent XSS
-   */
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    // Render each note in its quadrant
+    Object.values(notes).forEach(note => {
+      const quadrant = shadowRoot.querySelector(`.quadrant[data-quadrant="${note.quadrant}"]`);
+      if (quadrant) {
+        createNoteElement(note, quadrant);
+      }
+    });
   }
 
   // Initialize when DOM is ready
