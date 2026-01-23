@@ -4,7 +4,7 @@
 
   const GLOBAL_KEY = 'quadrant_global';
   const SITE_KEY = 'quadrant_site_' + location.hostname;
-  const DEBOUNCE_MS = 500;
+  const DEBOUNCE_MS = 300;
 
   let saveTimeout = null;
   let note = null;
@@ -13,6 +13,7 @@
   let activeTextarea = null;
   let isPinned = false;
   let pinBtn = null;
+  let isLoading = true; // Prevent saves during initial load
 
   // Create host and shadow DOM
   const host = document.createElement('div');
@@ -313,11 +314,11 @@
   // CORE FUNCTIONALITY
   // ============================================
 
-  // Toggle visibility
+  // Toggle visibility (always saves since it's user-initiated)
   function toggle() {
     isVisible = !isVisible;
     note.classList.toggle('visible', isVisible);
-    save();
+    if (!isLoading) save();
   }
 
   function show() {
@@ -328,7 +329,7 @@
   function hide() {
     isVisible = false;
     note.classList.remove('visible');
-    save();
+    if (!isLoading) save();
   }
 
   // Close button hides
@@ -416,18 +417,20 @@
     if (dragging) {
       dragging = false;
       header.classList.remove('dragging');
-      save();
+      if (!isLoading) save();
     }
   });
 
   // Track resize
   const resizeObserver = new ResizeObserver(() => {
-    if (isVisible) save();
+    if (isVisible && !isLoading) save();
   });
   resizeObserver.observe(note);
 
   // Save state
   function save() {
+    if (isLoading) return; // Don't save during initial load
+
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
       const rect = note.getBoundingClientRect();
@@ -436,13 +439,15 @@
         y: rect.top,
         width: note.offsetWidth,
         height: note.offsetHeight,
-        visible: isVisible,
+        isOpen: isVisible,
         cells: {}
       };
       textareas.forEach(ta => {
         state.cells[ta.dataset.cell] = ta.value;
       });
-      chrome.storage.local.set({ [getCurrentStorageKey()]: state });
+
+      const storageKey = getCurrentStorageKey();
+      chrome.storage.local.set({ [storageKey]: state });
     }, DEBOUNCE_MS);
   }
 
@@ -453,67 +458,128 @@
 
   // Load state from a specific key
   function loadFromStorage(key) {
+    isLoading = true;
     chrome.storage.local.get([key], (result) => {
       const state = result[key];
       if (state) {
-        if (state.x !== undefined) note.style.left = state.x + 'px';
-        if (state.y !== undefined) note.style.top = state.y + 'px';
-        if (state.width) note.style.width = state.width + 'px';
-        if (state.height) note.style.height = state.height + 'px';
-        if (state.cells) {
-          textareas.forEach(ta => {
-            ta.value = state.cells[ta.dataset.cell] || '';
-          });
-        }
-        if (state.visible) {
-          show();
-        }
+        applyState(state);
       } else {
-        // Default position centered, clear textareas
+        // Default position centered, clear textareas, keep closed
         note.style.left = (window.innerWidth - 300) / 2 + 'px';
         note.style.top = (window.innerHeight - 300) / 2 + 'px';
+        note.style.width = '300px';
+        note.style.height = '300px';
         textareas.forEach(ta => ta.value = '');
+        hide();
       }
+      isLoading = false;
     });
   }
 
   // Initial load: check if site has pinned note
   function initLoad() {
+    isLoading = true;
+
     chrome.storage.local.get([SITE_KEY, GLOBAL_KEY], (result) => {
       if (result[SITE_KEY]) {
-        // Site has a pinned note
+        // Site has a pinned note - use site-specific state
         isPinned = true;
         updatePinUI();
         applyState(result[SITE_KEY]);
       } else if (result[GLOBAL_KEY]) {
-        // Use global note
+        // Use global note - same note across all sites
         isPinned = false;
         updatePinUI();
         applyState(result[GLOBAL_KEY]);
       } else {
-        // No saved state, use defaults
+        // No saved state, use defaults (closed, centered)
         isPinned = false;
         updatePinUI();
         note.style.left = (window.innerWidth - 300) / 2 + 'px';
         note.style.top = (window.innerHeight - 300) / 2 + 'px';
+        note.style.width = '300px';
+        note.style.height = '300px';
+        // Note stays closed by default
       }
+
+      isLoading = false;
     });
   }
 
   function applyState(state) {
-    if (state.x !== undefined) note.style.left = state.x + 'px';
-    if (state.y !== undefined) note.style.top = state.y + 'px';
-    if (state.width) note.style.width = state.width + 'px';
-    if (state.height) note.style.height = state.height + 'px';
+    // Apply position
+    if (state.x !== undefined) {
+      note.style.left = state.x + 'px';
+    } else {
+      note.style.left = (window.innerWidth - 300) / 2 + 'px';
+    }
+    if (state.y !== undefined) {
+      note.style.top = state.y + 'px';
+    } else {
+      note.style.top = (window.innerHeight - 300) / 2 + 'px';
+    }
+
+    // Apply size
+    note.style.width = (state.width || 300) + 'px';
+    note.style.height = (state.height || 300) + 'px';
+
+    // Apply cell contents
     if (state.cells) {
       textareas.forEach(ta => {
         ta.value = state.cells[ta.dataset.cell] || '';
       });
+    } else {
+      textareas.forEach(ta => {
+        ta.value = '';
+      });
     }
-    if (state.visible) {
+
+    // Apply visibility - check both 'isOpen' (new) and 'visible' (old) for backwards compat
+    if (state.isOpen || state.visible) {
       show();
+    } else {
+      hide();
     }
   }
+
+  // Cross-tab sync: listen for storage changes
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (isLoading) return;
+
+    const relevantKey = isPinned ? SITE_KEY : GLOBAL_KEY;
+
+    if (changes[relevantKey]) {
+      const newState = changes[relevantKey].newValue;
+      if (newState) {
+        isLoading = true; // Prevent save loop
+        applyState(newState);
+        isLoading = false;
+      }
+    }
+
+    // If we're in global mode and a site key appears, switch to pinned mode
+    if (!isPinned && changes[SITE_KEY] && changes[SITE_KEY].newValue) {
+      isPinned = true;
+      updatePinUI();
+      isLoading = true;
+      applyState(changes[SITE_KEY].newValue);
+      isLoading = false;
+    }
+
+    // If we're pinned and site key is removed, switch to global
+    if (isPinned && changes[SITE_KEY] && !changes[SITE_KEY].newValue) {
+      isPinned = false;
+      updatePinUI();
+      chrome.storage.local.get([GLOBAL_KEY], (result) => {
+        if (result[GLOBAL_KEY]) {
+          isLoading = true;
+          applyState(result[GLOBAL_KEY]);
+          isLoading = false;
+        }
+      });
+    }
+  });
 
   // Run initial load
   initLoad();
