@@ -12,22 +12,31 @@
 
   async function safeGet() {
     try {
-      if (!chrome?.storage?.local) return null;
+      if (!chrome?.storage?.local) {
+        console.log('Quadrant: chrome.storage not available');
+        return null;
+      }
       const result = await chrome.storage.local.get('quadrant_global');
+      console.log('Quadrant LOADED:', JSON.stringify(result.quadrant_global));
       return result.quadrant_global || null;
     } catch (e) {
-      console.log('Quadrant: storage read failed', e.message);
+      console.log('Quadrant: load FAILED', e.message);
       return null;
     }
   }
 
   async function safeSave(content) {
     try {
-      if (!chrome?.storage?.local) return false;
+      if (!chrome?.storage?.local) {
+        console.log('Quadrant: chrome.storage not available');
+        return false;
+      }
+      console.log('Quadrant SAVING:', JSON.stringify(content));
       await chrome.storage.local.set({ quadrant_global: content });
+      console.log('Quadrant: save successful');
       return true;
     } catch (e) {
-      console.log('Quadrant: storage write failed', e.message);
+      console.log('Quadrant: save FAILED', e.message);
       return false;
     }
   }
@@ -142,6 +151,7 @@
       }
 
       .header-btn:hover { background: rgba(0,0,0,0.1); color: #443; }
+      .refresh-btn { font-size: 12px; }
       .copy-btn { font-size: 11px; }
       .clear-btn { font-size: 8px; text-transform: uppercase; }
       .close-btn { font-size: 14px; padding: 0 3px; }
@@ -232,6 +242,7 @@
       <div class="header">
         <span class="header-title">Quadrant</span>
         <div class="header-controls">
+          <button class="header-btn refresh-btn" title="Refresh from cloud">↻</button>
           <button class="header-btn copy-btn" title="Copy to clipboard">📋</button>
           <button class="header-btn clear-btn" title="Clear all">Clear</button>
           <button class="header-btn close-btn" title="Hide">&times;</button>
@@ -306,6 +317,13 @@
       if (text) navigator.clipboard.writeText(text.trim());
     };
 
+    // Refresh
+    note.querySelector('.refresh-btn').onclick = async (e) => {
+      e.stopPropagation();
+      await loadContent();
+      console.log('Quadrant: manually refreshed');
+    };
+
     // Clear
     note.querySelector('.clear-btn').onclick = async (e) => {
       e.stopPropagation();
@@ -314,13 +332,17 @@
       // Clear textareas visually
       textareas.forEach(ta => { ta.value = ''; });
 
-      // Clear global storage immediately
+      // Clear global storage and VERIFY it worked
       try {
-        await chrome.storage.local.set({
-          quadrant_global: { q1: '', q2: '', q3: '', q4: '' }
-        });
+        const emptyContent = { q1: '', q2: '', q3: '', q4: '' };
+        await chrome.storage.local.set({ quadrant_global: emptyContent });
+
+        // Verify
+        const check = await chrome.storage.local.get('quadrant_global');
+        console.log('Quadrant CLEARED, verified:', JSON.stringify(check.quadrant_global));
       } catch (err) {
-        console.log('Quadrant: clear failed', err.message);
+        console.log('Quadrant: clear FAILED', err.message);
+        alert('Clear failed - extension may need refresh');
       }
     };
 
