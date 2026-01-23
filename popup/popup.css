@@ -1,0 +1,146 @@
+/* QuadrantNote Popup Styles */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 14px;
+  color: #333;
+}
+
+.popup-container {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.popup-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px;
+  text-align: center;
+}
+
+.popup-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Content */
+.popup-content {
+  padding: 16px;
+}
+
+.description {
+  color: #666;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+/* Matrix preview */
+.matrix-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.preview-row {
+  display: flex;
+  gap: 4px;
+}
+
+.preview-cell {
+  flex: 1;
+  padding: 8px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.preview-cell.do-first {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.preview-cell.schedule {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.preview-cell.delegate {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.preview-cell.eliminate {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Instructions */
+.instructions {
+  background: #f9fafb;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.instructions h2 {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #374151;
+}
+
+.instructions ol {
+  padding-left: 20px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Stats */
+.stats {
+  background: #f0f9ff;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #0369a1;
+}
+
+.stats p {
+  margin-bottom: 4px;
+}
+
+.stats p:last-child {
+  margin-bottom: 0;
+}
+
+/* Footer */
+.popup-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #eee;
+}
+
+.btn-danger {
+  width: 100%;
+  padding: 10px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn-danger:hover {
+  background: #fecaca;
+}

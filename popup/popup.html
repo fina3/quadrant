@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuadrantNote</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <h1>QuadrantNote</h1>
+    </div>
+
+    <div class="popup-content">
+      <p class="description">
+        Organize tasks using the Eisenhower Matrix on any webpage.
+      </p>
+
+      <div class="matrix-preview">
+        <div class="preview-row">
+          <div class="preview-cell do-first">Do First</div>
+          <div class="preview-cell schedule">Schedule</div>
+        </div>
+        <div class="preview-row">
+          <div class="preview-cell delegate">Delegate</div>
+          <div class="preview-cell eliminate">Eliminate</div>
+        </div>
+      </div>
+
+      <div class="instructions">
+        <h2>How to use:</h2>
+        <ol>
+          <li>Click the floating button (bottom-right corner)</li>
+          <li>Drag the matrix to reposition it</li>
+          <li>Add tasks to each quadrant</li>
+          <li>Notes are saved per-domain</li>
+        </ol>
+      </div>
+
+      <div class="stats" id="stats">
+        <p>Loading stats...</p>
+      </div>
+    </div>
+
+    <div class="popup-footer">
+      <button id="clear-all-btn" class="btn-danger">Clear All Data</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
