@@ -1,48 +1,51 @@
 (function() {
-  // Prevent double initialization
   if (window.__quadrantInitialized) return;
   window.__quadrantInitialized = true;
 
-  // ============================================
-  // CHROME API SAFETY CHECK
-  // ============================================
-
-  function isChromeAvailable() {
-    return typeof chrome !== 'undefined' && chrome.storage && chrome.runtime?.id;
-  }
-
-  // ============================================
-  // GLOBALS
-  // ============================================
-
-  const STORAGE_KEY = 'quadrant_global';
   let note = null;
   let shadowRoot = null;
   let saveTimeout = null;
-  let isInitialized = false;
 
   // ============================================
-  // CREATE QUADRANT NOTE
+  // DEBOUNCED SAVE - ONLY SAVES TEXT CONTENT
   // ============================================
 
-  function createQuadrantNote() {
-    // Create host element for shadow DOM
+  function saveContent() {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(async () => {
+      if (!chrome?.storage) return;
+
+      try {
+        const content = {
+          q1: shadowRoot.querySelector('[data-cell="q1"]')?.value || '',
+          q2: shadowRoot.querySelector('[data-cell="q2"]')?.value || '',
+          q3: shadowRoot.querySelector('[data-cell="q3"]')?.value || '',
+          q4: shadowRoot.querySelector('[data-cell="q4"]')?.value || ''
+        };
+        await chrome.storage.local.set({ quadrant_content: content });
+      } catch (e) {}
+    }, 300);
+  }
+
+  // ============================================
+  // CREATE NOTE
+  // ============================================
+
+  function createNote() {
     const host = document.createElement('div');
     host.id = 'quadrant-host';
     document.body.appendChild(host);
     shadowRoot = host.attachShadow({ mode: 'closed' });
 
-    // Inject styles
     const styles = document.createElement('style');
     styles.textContent = `
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
 
       .note {
         position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         width: 300px;
         height: 300px;
         min-width: 200px;
@@ -55,13 +58,10 @@
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         resize: both;
         overflow: hidden;
-        pointer-events: auto;
         z-index: 2147483647;
       }
 
-      .note.visible {
-        display: flex;
-      }
+      .note.visible { display: flex; }
 
       .header {
         height: 16px;
@@ -75,9 +75,7 @@
         user-select: none;
       }
 
-      .header.dragging {
-        cursor: grabbing;
-      }
+      .header.dragging { cursor: grabbing; }
 
       .header-title {
         font-size: 9px;
@@ -87,11 +85,7 @@
         letter-spacing: 0.5px;
       }
 
-      .header-controls {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
+      .header-controls { display: flex; align-items: center; gap: 4px; }
 
       .header-btn {
         background: none;
@@ -102,14 +96,9 @@
         cursor: pointer;
         padding: 2px 4px;
         border-radius: 2px;
-        font-family: inherit;
       }
 
-      .header-btn:hover {
-        background: rgba(0,0,0,0.1);
-        color: #443;
-      }
-
+      .header-btn:hover { background: rgba(0,0,0,0.1); color: #443; }
       .copy-btn { font-size: 11px; }
       .clear-btn { font-size: 8px; text-transform: uppercase; }
       .close-btn { font-size: 14px; padding: 0 3px; }
@@ -122,12 +111,7 @@
         min-height: 0;
       }
 
-      .top-labels {
-        display: flex;
-        height: 14px;
-        padding-left: 2px;
-      }
-
+      .top-labels { display: flex; height: 14px; padding-left: 2px; }
       .top-label {
         flex: 1;
         font-size: 9px;
@@ -137,11 +121,7 @@
         font-weight: 500;
       }
 
-      .grid-container {
-        flex: 1;
-        display: flex;
-        min-height: 0;
-      }
+      .grid-container { flex: 1; display: flex; min-height: 0; }
 
       .side-labels {
         width: 16px;
@@ -197,23 +177,12 @@
         overflow-y: auto;
       }
 
-      .cell textarea::placeholder {
-        color: #aa9;
-        font-size: 10px;
-      }
-
-      .cell textarea::-webkit-scrollbar {
-        width: 4px;
-      }
-
-      .cell textarea::-webkit-scrollbar-thumb {
-        background: rgba(0,0,0,0.15);
-        border-radius: 2px;
-      }
+      .cell textarea::placeholder { color: #aa9; font-size: 10px; }
+      .cell textarea::-webkit-scrollbar { width: 4px; }
+      .cell textarea::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
     `;
     shadowRoot.appendChild(styles);
 
-    // Create note element
     note = document.createElement('div');
     note.className = 'note';
     note.innerHTML = `
@@ -246,7 +215,6 @@
     `;
     shadowRoot.appendChild(note);
 
-    // Setup event handlers
     setupEventHandlers();
   }
 
@@ -259,255 +227,117 @@
     const textareas = note.querySelectorAll('textarea');
     const host = shadowRoot.host;
 
-    // Keyboard event isolation
-    const KEYBOARD_EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput'];
-    const ALL_EVENTS = [...KEYBOARD_EVENTS, 'paste', 'cut', 'copy', 'compositionstart', 'compositionend', 'compositionupdate'];
-
-    ALL_EVENTS.forEach(eventType => {
-      note.addEventListener(eventType, (e) => {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }, true);
-      host.addEventListener(eventType, (e) => {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }, true);
+    // Keyboard isolation
+    const EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput', 'paste', 'cut', 'copy'];
+    EVENTS.forEach(evt => {
+      note.addEventListener(evt, e => { e.stopPropagation(); e.stopImmediatePropagation(); }, true);
+      host.addEventListener(evt, e => { e.stopPropagation(); e.stopImmediatePropagation(); }, true);
     });
 
     let activeTextarea = null;
-    function windowKeyHandler(e) {
-      if (activeTextarea) {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }
-    }
-    KEYBOARD_EVENTS.forEach(eventType => {
-      window.addEventListener(eventType, windowKeyHandler, true);
-      document.addEventListener(eventType, windowKeyHandler, true);
+    ['keydown', 'keyup', 'keypress', 'input'].forEach(evt => {
+      window.addEventListener(evt, e => { if (activeTextarea) { e.stopPropagation(); e.stopImmediatePropagation(); } }, true);
     });
 
     textareas.forEach(ta => {
       ta.addEventListener('focus', () => { activeTextarea = ta; });
       ta.addEventListener('blur', () => { if (activeTextarea === ta) activeTextarea = null; });
-      // Save on every input
-      ta.addEventListener('input', () => saveState());
+      ta.addEventListener('input', saveContent);
     });
 
-    // Close button
+    // Close
     note.querySelector('.close-btn').onclick = (e) => {
       e.stopPropagation();
       note.classList.remove('visible');
-      saveState();
     };
 
-    // Copy button
+    // Copy
     note.querySelector('.copy-btn').onclick = (e) => {
       e.stopPropagation();
       const labels = ['URGENT + IMPORTANT', 'NOT URGENT + IMPORTANT', 'URGENT + NOT IMPORTANT', 'NOT URGENT + NOT IMPORTANT'];
-      const cells = ['q1', 'q2', 'q3', 'q4'];
       let text = '';
-      cells.forEach((cell, i) => {
-        const content = shadowRoot.querySelector(`[data-cell="${cell}"]`)?.value?.trim();
-        if (content) {
-          text += labels[i] + ':\n' + content + '\n\n';
-        }
+      ['q1', 'q2', 'q3', 'q4'].forEach((cell, i) => {
+        const val = shadowRoot.querySelector(`[data-cell="${cell}"]`)?.value?.trim();
+        if (val) text += labels[i] + ':\n' + val + '\n\n';
       });
-      if (text) {
-        navigator.clipboard.writeText(text.trim());
-      }
+      if (text) navigator.clipboard.writeText(text.trim());
     };
 
-    // Clear button
+    // Clear
     note.querySelector('.clear-btn').onclick = (e) => {
       e.stopPropagation();
       if (confirm('Clear all tasks?')) {
         textareas.forEach(ta => { ta.value = ''; });
-        saveState();
+        saveContent();
       }
     };
 
-    // Drag functionality
-    let dragging = false, dragX, dragY, noteX, noteY;
-
+    // Drag
+    let dragging = false, startX, startY, origX, origY;
     header.onmousedown = (e) => {
       if (e.target.closest('.header-btn')) return;
       e.preventDefault();
       dragging = true;
       const rect = note.getBoundingClientRect();
-      noteX = rect.left;
-      noteY = rect.top;
-      dragX = e.clientX;
-      dragY = e.clientY;
+      startX = e.clientX;
+      startY = e.clientY;
+      origX = rect.left;
+      origY = rect.top;
+      note.style.transform = 'none';
+      note.style.left = origX + 'px';
+      note.style.top = origY + 'px';
       header.classList.add('dragging');
     };
 
     document.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      e.preventDefault();
-      note.style.left = (noteX + e.clientX - dragX) + 'px';
-      note.style.top = (noteY + e.clientY - dragY) + 'px';
+      note.style.left = (origX + e.clientX - startX) + 'px';
+      note.style.top = (origY + e.clientY - startY) + 'px';
     });
 
     document.addEventListener('mouseup', () => {
       if (dragging) {
         dragging = false;
         header.classList.remove('dragging');
-        saveState();
       }
     });
-
-    // Resize observer
-    const resizeObserver = new ResizeObserver(() => {
-      if (isInitialized && note.classList.contains('visible')) {
-        saveState();
-      }
-    });
-    resizeObserver.observe(note);
   }
 
   // ============================================
-  // SAVE STATE - BULLETPROOF
+  // OPEN QUADRANT - LOAD CONTENT AND SHOW
   // ============================================
 
-  function saveState() {
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(async () => {
-      if (!isChromeAvailable()) return;
-      if (!note) return;
+  async function openQuadrant() {
+    if (!note) createNote();
 
-      const rect = note.getBoundingClientRect();
-      const state = {
-        x: parseInt(note.style.left) || rect.left || 100,
-        y: parseInt(note.style.top) || rect.top || 100,
-        width: note.offsetWidth || 300,
-        height: note.offsetHeight || 300,
-        isOpen: note.classList.contains('visible'),
-        cells: {
-          q1: shadowRoot.querySelector('[data-cell="q1"]')?.value || '',
-          q2: shadowRoot.querySelector('[data-cell="q2"]')?.value || '',
-          q3: shadowRoot.querySelector('[data-cell="q3"]')?.value || '',
-          q4: shadowRoot.querySelector('[data-cell="q4"]')?.value || ''
-        }
-      };
+    note.classList.add('visible');
 
-      try {
-        await chrome.storage.local.set({ [STORAGE_KEY]: state });
-      } catch (e) {
-        // Extension context invalidated - ignore
-      }
-    }, 300);
-  }
-
-  // ============================================
-  // TOGGLE NOTE
-  // ============================================
-
-  function toggleNote() {
-    if (!note) return;
-    note.classList.toggle('visible');
-    saveState();
-  }
-
-  // ============================================
-  // INITIALIZE
-  // ============================================
-
-  async function initQuadrant() {
-    if (!isChromeAvailable()) return;
-
+    // Load saved content
     try {
-      // Load saved state FIRST
-      const result = await chrome.storage.local.get(STORAGE_KEY);
-      const state = result[STORAGE_KEY];
-
-      // Create the note DOM
-      createQuadrantNote();
-
-      if (state) {
-        // Restore position
-        if (state.x !== undefined) {
-          note.style.left = state.x + 'px';
-        } else {
-          note.style.left = (window.innerWidth - 300) / 2 + 'px';
-        }
-        if (state.y !== undefined) {
-          note.style.top = state.y + 'px';
-        } else {
-          note.style.top = (window.innerHeight - 300) / 2 + 'px';
-        }
-
-        // Restore size
-        if (state.width) note.style.width = state.width + 'px';
-        if (state.height) note.style.height = state.height + 'px';
-
-        // Restore text content - THIS IS CRITICAL
-        if (state.cells) {
-          const q1 = shadowRoot.querySelector('[data-cell="q1"]');
-          const q2 = shadowRoot.querySelector('[data-cell="q2"]');
-          const q3 = shadowRoot.querySelector('[data-cell="q3"]');
-          const q4 = shadowRoot.querySelector('[data-cell="q4"]');
-          if (q1) q1.value = state.cells.q1 || '';
-          if (q2) q2.value = state.cells.q2 || '';
-          if (q3) q3.value = state.cells.q3 || '';
-          if (q4) q4.value = state.cells.q4 || '';
-        }
-
-        // Restore visibility - auto-show if was open
-        if (state.isOpen) {
-          note.classList.add('visible');
-        }
-      } else {
-        // No saved state - center the note
-        note.style.left = (window.innerWidth - 300) / 2 + 'px';
-        note.style.top = (window.innerHeight - 300) / 2 + 'px';
+      const result = await chrome.storage.local.get('quadrant_content');
+      const content = result.quadrant_content;
+      if (content) {
+        shadowRoot.querySelector('[data-cell="q1"]').value = content.q1 || '';
+        shadowRoot.querySelector('[data-cell="q2"]').value = content.q2 || '';
+        shadowRoot.querySelector('[data-cell="q3"]').value = content.q3 || '';
+        shadowRoot.querySelector('[data-cell="q4"]').value = content.q4 || '';
       }
-
-      isInitialized = true;
-
-      // Listen for toggle messages from extension icon
-      chrome.runtime.onMessage.addListener((message) => {
-        if (message.action === 'toggle') {
-          toggleNote();
-        }
-      });
-
-      // Cross-tab sync
-      chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'local') return;
-        if (!changes[STORAGE_KEY]) return;
-
-        const newState = changes[STORAGE_KEY].newValue;
-        if (!newState) return;
-
-        // Apply changes from other tabs
-        if (newState.x !== undefined) note.style.left = newState.x + 'px';
-        if (newState.y !== undefined) note.style.top = newState.y + 'px';
-        if (newState.width) note.style.width = newState.width + 'px';
-        if (newState.height) note.style.height = newState.height + 'px';
-
-        if (newState.cells) {
-          const q1 = shadowRoot.querySelector('[data-cell="q1"]');
-          const q2 = shadowRoot.querySelector('[data-cell="q2"]');
-          const q3 = shadowRoot.querySelector('[data-cell="q3"]');
-          const q4 = shadowRoot.querySelector('[data-cell="q4"]');
-          if (q1) q1.value = newState.cells.q1 || '';
-          if (q2) q2.value = newState.cells.q2 || '';
-          if (q3) q3.value = newState.cells.q3 || '';
-          if (q4) q4.value = newState.cells.q4 || '';
-        }
-
-        if (newState.isOpen) {
-          note.classList.add('visible');
-        } else {
-          note.classList.remove('visible');
-        }
-      });
-
-    } catch (e) {
-      console.log('Quadrant init error:', e);
-    }
+    } catch (e) {}
   }
 
-  // Run initialization immediately
-  initQuadrant();
+  // ============================================
+  // LISTEN FOR EXTENSION ICON CLICK
+  // ============================================
+
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.action === 'toggle') {
+        if (note?.classList.contains('visible')) {
+          note.classList.remove('visible');
+        } else {
+          openQuadrant();
+        }
+      }
+    });
+  } catch (e) {}
 })();
