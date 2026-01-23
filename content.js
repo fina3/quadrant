@@ -22,7 +22,7 @@
           q3: shadowRoot.querySelector('[data-cell="q3"]')?.value || '',
           q4: shadowRoot.querySelector('[data-cell="q4"]')?.value || ''
         };
-        await chrome.storage.local.set({ quadrant_content: content });
+        await chrome.storage.local.set({ quadrant_global: content });
       } catch (e) {}
     }, 300);
   }
@@ -314,8 +314,8 @@
 
     // Load saved content
     try {
-      const result = await chrome.storage.local.get('quadrant_content');
-      const content = result.quadrant_content;
+      const result = await chrome.storage.local.get('quadrant_global');
+      const content = result.quadrant_global || {};
       if (content) {
         shadowRoot.querySelector('[data-cell="q1"]').value = content.q1 || '';
         shadowRoot.querySelector('[data-cell="q2"]').value = content.q2 || '';
