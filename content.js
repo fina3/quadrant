@@ -10,6 +10,7 @@
 
   const MAX_NOTES_PER_QUADRANT = 20;
   const DEBOUNCE_DELAY = 300;
+  const STORAGE_KEY = `notes_${window.location.hostname}`;
 
   let isOverlayVisible = false;
   let isDraggingOverlay = false;
@@ -33,6 +34,9 @@
 
   // Debounce timer
   let saveTimer = null;
+
+  // Flag to ignore storage changes triggered by this tab
+  let isSaving = false;
 
   /**
    * Generate UUID v4
@@ -64,6 +68,30 @@
     createFloatingButton();
     createOverlay();
     loadNotes();
+    setupStorageListener();
+  }
+
+  /**
+   * Setup chrome.storage.onChanged listener for cross-tab sync
+   */
+  function setupStorageListener() {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      if (!changes[STORAGE_KEY]) return;
+
+      // Ignore changes we triggered ourselves
+      if (isSaving) return;
+
+      const newValue = changes[STORAGE_KEY].newValue;
+      if (newValue) {
+        notes = newValue;
+        renderAllNotes();
+      } else {
+        // Storage was cleared
+        notes = {};
+        renderAllNotes();
+      }
+    });
   }
 
   /**
@@ -170,9 +198,40 @@
           cursor: grabbing;
         }
 
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
         .header-title {
           font-size: 11px;
           font-weight: 600;
+        }
+
+        .header-controls {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .export-btn {
+          background: rgba(255, 255, 255, 0.15);
+          border: none;
+          color: white;
+          font-size: 9px;
+          cursor: pointer;
+          padding: 2px 6px;
+          border-radius: 3px;
+          opacity: 0.8;
+          transition: opacity 0.2s, background 0.2s;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .export-btn:hover {
+          opacity: 1;
+          background: rgba(255, 255, 255, 0.25);
         }
 
         .close-btn {
@@ -329,8 +388,13 @@
 
       <div class="overlay">
         <div class="header">
-          <span class="header-title">QuadrantNote</span>
-          <button class="close-btn" title="Close">&times;</button>
+          <div class="header-left">
+            <span class="header-title">QuadrantNote</span>
+          </div>
+          <div class="header-controls">
+            <button class="export-btn" title="Export as JSON">Export</button>
+            <button class="close-btn" title="Close">&times;</button>
+          </div>
         </div>
         <div class="grid">
           <div class="quadrant" data-quadrant="1">
@@ -370,10 +434,17 @@
   function setupOverlayEvents() {
     const header = shadowRoot.querySelector('.header');
     const closeBtn = shadowRoot.querySelector('.close-btn');
+    const exportBtn = shadowRoot.querySelector('.export-btn');
     const quadrants = shadowRoot.querySelectorAll('.quadrant');
 
     // Close button
     closeBtn.addEventListener('click', toggleOverlay);
+
+    // Export button
+    exportBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportNotes();
+    });
 
     // Header dragging
     header.addEventListener('mousedown', startOverlayDrag);
@@ -415,10 +486,34 @@
   }
 
   /**
+   * Export notes as JSON file
+   */
+  function exportNotes() {
+    const exportData = {
+      domain: currentDomain,
+      exportedAt: new Date().toISOString(),
+      version: '1.0',
+      notes: notes
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `quadrantnote-${currentDomain}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /**
    * Start dragging the overlay
    */
   function startOverlayDrag(e) {
-    if (e.target.closest('.close-btn')) return;
+    if (e.target.closest('.close-btn') || e.target.closest('.export-btn')) return;
     isDraggingOverlay = true;
     const rect = overlay.getBoundingClientRect();
     dragOffset.x = e.clientX - rect.left;
@@ -683,35 +778,34 @@
   }
 
   /**
-   * Load notes from storage
+   * Load notes from storage on page load
    */
   async function loadNotes() {
     try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'getNotesForDomain',
-        domain: currentDomain
-      });
-
-      if (response && response.success && response.notes) {
-        notes = response.notes;
+      const result = await chrome.storage.local.get([STORAGE_KEY]);
+      if (result[STORAGE_KEY]) {
+        notes = result[STORAGE_KEY];
         renderAllNotes();
       }
+      // If no data exists, notes stays empty {} and quadrants show empty
     } catch (error) {
       console.error('QuadrantNote: Failed to load notes', error);
     }
   }
 
   /**
-   * Save notes to storage
+   * Save notes to storage (debounced)
    */
   async function saveNotes() {
     try {
-      await chrome.runtime.sendMessage({
-        action: 'saveNotesForDomain',
-        domain: currentDomain,
-        notes: notes
-      });
+      isSaving = true;
+      await chrome.storage.local.set({ [STORAGE_KEY]: notes });
+      // Small delay to ensure the onChanged listener ignores this change
+      setTimeout(() => {
+        isSaving = false;
+      }, 50);
     } catch (error) {
+      isSaving = false;
       console.error('QuadrantNote: Failed to save notes', error);
     }
   }
