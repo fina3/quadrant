@@ -307,11 +307,20 @@
     };
 
     // Clear
-    note.querySelector('.clear-btn').onclick = (e) => {
+    note.querySelector('.clear-btn').onclick = async (e) => {
       e.stopPropagation();
-      if (confirm('Clear all tasks?')) {
-        textareas.forEach(ta => { ta.value = ''; });
-        saveContent();
+      if (!confirm('Clear all tasks from Quadrant?')) return;
+
+      // Clear textareas visually
+      textareas.forEach(ta => { ta.value = ''; });
+
+      // Clear global storage immediately
+      try {
+        await chrome.storage.local.set({
+          quadrant_global: { q1: '', q2: '', q3: '', q4: '' }
+        });
+      } catch (err) {
+        console.log('Quadrant: clear failed', err.message);
       }
     };
 
