@@ -1,110 +1,145 @@
-#quadrant-overlay {
+#quadrant-note {
   position: fixed;
-  width: 420px;
-  height: 420px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 300px;
+  height: 300px;
+  min-width: 200px;
+  min-height: 200px;
+  background: #fff9b1;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
   z-index: 2147483647;
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  resize: both;
   overflow: hidden;
 }
 
-#quadrant-overlay .header {
-  height: 24px;
-  background: #333;
-  color: white;
+/* Header bar */
+#quadrant-note .header {
+  height: 12px;
+  min-height: 12px;
+  background: #f5e6a3;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
   cursor: grab;
   user-select: none;
 }
 
-#quadrant-overlay .header.dragging {
+#quadrant-note .header.dragging {
   cursor: grabbing;
 }
 
-#quadrant-overlay .header-title {
-  font-size: 12px;
+#quadrant-note .header-title {
+  font-size: 8px;
   font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-#quadrant-overlay .header-btn {
+#quadrant-note .close-btn {
   background: none;
   border: none;
-  color: white;
+  color: #888;
+  font-size: 10px;
+  line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
-  font-size: 14px;
-  opacity: 0.8;
+  padding: 0;
 }
 
-#quadrant-overlay .header-btn:hover {
-  opacity: 1;
+#quadrant-note .close-btn:hover {
+  color: #333;
 }
 
-#quadrant-overlay .grid {
+/* Main content area */
+#quadrant-note .content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 2px 8px 8px 20px;
+  min-height: 0;
+}
+
+/* Top labels */
+#quadrant-note .top-labels {
+  display: flex;
+  height: 12px;
+  margin-left: 0;
+}
+
+#quadrant-note .top-label {
+  flex: 1;
+  font-size: 9px;
+  color: #888;
+  text-transform: uppercase;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+/* Grid container with side labels */
+#quadrant-note .grid-container {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* Side labels */
+#quadrant-note .side-labels {
+  width: 14px;
+  margin-left: -18px;
+  display: flex;
+  flex-direction: column;
+}
+
+#quadrant-note .side-label {
+  flex: 1;
+  font-size: 9px;
+  color: #888;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.3px;
+}
+
+/* 2x2 Grid */
+#quadrant-note .grid {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   gap: 1px;
-  background: #ccc;
+  background: rgba(0,0,0,0.08);
+  min-height: 0;
 }
 
-#quadrant-overlay .quadrant {
-  position: relative;
-  overflow: hidden;
+#quadrant-note .cell {
+  background: transparent;
+  min-height: 0;
+  min-width: 0;
 }
 
-#quadrant-overlay .quadrant[data-q="1"] { background: #ffcccc; }
-#quadrant-overlay .quadrant[data-q="2"] { background: #ccffcc; }
-#quadrant-overlay .quadrant[data-q="3"] { background: #ffffcc; }
-#quadrant-overlay .quadrant[data-q="4"] { background: #ccccff; }
-
-#quadrant-overlay .quadrant-label {
-  position: absolute;
-  top: 4px;
-  left: 6px;
-  font-size: 10px;
-  color: #666;
-  text-transform: uppercase;
-  font-weight: 600;
-  pointer-events: none;
-}
-
-#quadrant-overlay .note {
-  position: absolute;
-  width: 80px;
-  height: 60px;
-  background: #fff9b1;
-  box-shadow: 1px 1px 4px rgba(0,0,0,0.15);
-  cursor: grab;
-  user-select: none;
-}
-
-#quadrant-overlay .note.dragging {
-  cursor: grabbing;
-  opacity: 0.8;
-  z-index: 100;
-}
-
-#quadrant-overlay .note-content {
+#quadrant-note .cell textarea {
   width: 100%;
   height: 100%;
+  border: none;
+  background: transparent;
+  resize: none;
   padding: 4px;
+  font-family: inherit;
   font-size: 11px;
   line-height: 1.3;
+  color: #333;
   outline: none;
-  overflow: hidden;
-  word-break: break-word;
 }
 
-#quadrant-overlay .note-content:empty::before {
-  content: 'Type...';
-  color: #999;
+#quadrant-note .cell textarea::placeholder {
+  color: #aaa;
+  font-size: 10px;
 }

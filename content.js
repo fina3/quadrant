@@ -1,151 +1,95 @@
 (function() {
-  if (document.getElementById('quadrant-overlay')) return;
+  if (document.getElementById('quadrant-note')) return;
 
   const STORAGE_KEY = 'quadrant_' + location.hostname;
-  let notes = {};
-  let saveTimeout = null;
 
-  // Create overlay
-  const overlay = document.createElement('div');
-  overlay.id = 'quadrant-overlay';
-  overlay.innerHTML = `
+  // Create note
+  const note = document.createElement('div');
+  note.id = 'quadrant-note';
+  note.innerHTML = `
     <div class="header">
       <span class="header-title">Quadrant</span>
-      <button class="header-btn close-btn">&times;</button>
+      <button class="close-btn">&times;</button>
     </div>
-    <div class="grid">
-      <div class="quadrant" data-q="1"><span class="quadrant-label">Do First</span></div>
-      <div class="quadrant" data-q="2"><span class="quadrant-label">Schedule</span></div>
-      <div class="quadrant" data-q="3"><span class="quadrant-label">Delegate</span></div>
-      <div class="quadrant" data-q="4"><span class="quadrant-label">Eliminate</span></div>
+    <div class="content">
+      <div class="top-labels">
+        <span class="top-label">Urgent</span>
+        <span class="top-label">Not Urgent</span>
+      </div>
+      <div class="grid-container">
+        <div class="side-labels">
+          <span class="side-label">Important</span>
+          <span class="side-label">Not Important</span>
+        </div>
+        <div class="grid">
+          <div class="cell"><textarea data-cell="0" placeholder="Do First"></textarea></div>
+          <div class="cell"><textarea data-cell="1" placeholder="Schedule"></textarea></div>
+          <div class="cell"><textarea data-cell="2" placeholder="Delegate"></textarea></div>
+          <div class="cell"><textarea data-cell="3" placeholder="Eliminate"></textarea></div>
+        </div>
+      </div>
     </div>
   `;
 
   // Position centered
-  overlay.style.left = (window.innerWidth - 420) / 2 + 'px';
-  overlay.style.top = (window.innerHeight - 420) / 2 + 'px';
+  note.style.left = (window.innerWidth - 300) / 2 + 'px';
+  note.style.top = (window.innerHeight - 300) / 2 + 'px';
 
-  document.body.appendChild(overlay);
+  document.body.appendChild(note);
 
   // Close button
-  overlay.querySelector('.close-btn').onclick = () => overlay.remove();
+  note.querySelector('.close-btn').onclick = () => note.remove();
 
-  // Drag overlay
+  // Drag by header
   let dragging = false, dragX, dragY;
-  const header = overlay.querySelector('.header');
+  const header = note.querySelector('.header');
 
   header.onmousedown = (e) => {
-    if (e.target.classList.contains('header-btn')) return;
+    if (e.target.classList.contains('close-btn')) return;
     dragging = true;
-    dragX = e.clientX - overlay.offsetLeft;
-    dragY = e.clientY - overlay.offsetTop;
+    dragX = e.clientX - note.offsetLeft;
+    dragY = e.clientY - note.offsetTop;
     header.classList.add('dragging');
   };
 
-  document.onmousemove = (e) => {
+  document.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    overlay.style.left = Math.max(0, Math.min(e.clientX - dragX, window.innerWidth - 420)) + 'px';
-    overlay.style.top = Math.max(0, Math.min(e.clientY - dragY, window.innerHeight - 420)) + 'px';
-  };
-
-  document.onmouseup = () => {
-    dragging = false;
-    header.classList.remove('dragging');
-  };
-
-  // Double-click to create note
-  overlay.querySelectorAll('.quadrant').forEach(q => {
-    q.ondblclick = (e) => {
-      if (e.target.classList.contains('note') || e.target.classList.contains('note-content')) return;
-      const rect = q.getBoundingClientRect();
-      createNote({
-        id: Date.now().toString(),
-        text: '',
-        q: parseInt(q.dataset.q),
-        x: Math.max(0, Math.min(e.clientX - rect.left - 40, rect.width - 80)),
-        y: Math.max(0, Math.min(e.clientY - rect.top - 30, rect.height - 60))
-      });
-    };
+    note.style.left = (e.clientX - dragX) + 'px';
+    note.style.top = (e.clientY - dragY) + 'px';
   });
 
-  function createNote(data) {
-    notes[data.id] = data;
+  document.addEventListener('mouseup', () => {
+    dragging = false;
+    header.classList.remove('dragging');
+  });
 
-    const note = document.createElement('div');
-    note.className = 'note';
-    note.dataset.id = data.id;
-    note.style.left = data.x + 'px';
-    note.style.top = data.y + 'px';
-
-    const content = document.createElement('div');
-    content.className = 'note-content';
-    content.contentEditable = true;
-    content.textContent = data.text;
-
-    content.oninput = () => {
-      notes[data.id].text = content.textContent;
-      save();
-    };
-
-    content.onmousedown = (e) => e.stopPropagation();
-
-    // Drag note
-    let noteDrag = false, noteX, noteY;
-    note.onmousedown = (e) => {
-      if (e.target === content && document.activeElement === content) return;
-      e.preventDefault();
-      noteDrag = true;
-      noteX = e.clientX - note.offsetLeft;
-      noteY = e.clientY - note.offsetTop;
-      note.classList.add('dragging');
-    };
-
-    document.addEventListener('mousemove', (e) => {
-      if (!noteDrag) return;
-      const quadrant = note.parentElement;
-      const rect = quadrant.getBoundingClientRect();
-      const x = Math.max(0, Math.min(e.clientX - rect.left - noteX, rect.width - 80));
-      const y = Math.max(0, Math.min(e.clientY - rect.top - noteY, rect.height - 60));
-      note.style.left = x + 'px';
-      note.style.top = y + 'px';
-    });
-
-    document.addEventListener('mouseup', () => {
-      if (noteDrag) {
-        noteDrag = false;
-        note.classList.remove('dragging');
-        notes[data.id].x = parseInt(note.style.left);
-        notes[data.id].y = parseInt(note.style.top);
-        save();
-      }
-    });
-
-    // Right-click delete
-    note.oncontextmenu = (e) => {
-      e.preventDefault();
-      if (confirm('Delete note?')) {
-        note.remove();
-        delete notes[data.id];
-        save();
-      }
-    };
-
-    note.appendChild(content);
-    overlay.querySelector(`.quadrant[data-q="${data.q}"]`).appendChild(note);
-    save();
-  }
+  // Save/load
+  const textareas = note.querySelectorAll('textarea');
+  let saveTimeout = null;
 
   function save() {
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
-      chrome.storage.local.set({ [STORAGE_KEY]: notes });
+      const data = {};
+      textareas.forEach(ta => {
+        data[ta.dataset.cell] = ta.value;
+      });
+      chrome.storage.local.set({ [STORAGE_KEY]: data });
     }, 300);
   }
 
-  // Load notes
+  textareas.forEach(ta => {
+    ta.addEventListener('input', save);
+  });
+
+  // Load saved data
   chrome.storage.local.get([STORAGE_KEY], (result) => {
     if (result[STORAGE_KEY]) {
-      Object.values(result[STORAGE_KEY]).forEach(createNote);
+      textareas.forEach(ta => {
+        if (result[STORAGE_KEY][ta.dataset.cell]) {
+          ta.value = result[STORAGE_KEY][ta.dataset.cell];
+        }
+      });
     }
   });
 })();
