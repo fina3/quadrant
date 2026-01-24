@@ -76,13 +76,14 @@
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
 
-    const rect = note.getBoundingClientRect();
-    const newWidth = e.clientX - rect.left;
-    const newHeight = e.clientY - rect.top;
+    const left = parseInt(note.style.left) || note.getBoundingClientRect().left;
+    const top = parseInt(note.style.top) || note.getBoundingClientRect().top;
 
-    // Minimum size
-    if (newWidth > 200) note.style.width = newWidth + 'px';
-    if (newHeight > 200) note.style.height = newHeight + 'px';
+    const newWidth = e.clientX - left;
+    const newHeight = e.clientY - top;
+
+    if (newWidth > 250) note.style.width = newWidth + 'px';
+    if (newHeight > 250) note.style.height = newHeight + 'px';
   });
 
   document.addEventListener('mouseup', () => {
