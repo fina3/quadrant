@@ -10,6 +10,7 @@
   z-index: 2147483647;
   font-family: -apple-system, sans-serif;
   display: none;
+  color: #333;
 }
 
 #quadrant-header {
@@ -52,12 +53,13 @@
 
 #quadrant-grid textarea {
   border: 1px solid #e0d87a;
-  background: transparent;
+  background: rgba(255,255,255,0.3);
   padding: 4px;
   font-size: 11px;
   resize: none;
   outline: none;
   font-family: inherit;
+  color: #333;
 }
 
 #quadrant-grid textarea::placeholder {
