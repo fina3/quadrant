@@ -13,6 +13,7 @@
       <span>QUADRANT</span>
       <div>
         <button id="q-refresh" title="Refresh">↻</button>
+        <button id="q-copy" title="Copy to clipboard">📋</button>
         <button id="q-clear" title="Clear all">CLEAR</button>
         <button id="q-close" title="Close">×</button>
       </div>
@@ -107,6 +108,21 @@
 
   // BUTTONS
   document.getElementById('q-refresh').addEventListener('click', loadContent);
+  document.getElementById('q-copy').addEventListener('click', async () => {
+    const q1 = document.querySelector('[data-cell="q1"]').value;
+    const q2 = document.querySelector('[data-cell="q2"]').value;
+    const q3 = document.querySelector('[data-cell="q3"]').value;
+    const q4 = document.querySelector('[data-cell="q4"]').value;
+
+    const text = `URGENT + IMPORTANT:\n${q1}\n\nNOT URGENT + IMPORTANT:\n${q2}\n\nURGENT + NOT IMPORTANT:\n${q3}\n\nNOT URGENT + NOT IMPORTANT:\n${q4}`;
+
+    await navigator.clipboard.writeText(text);
+
+    // Brief visual feedback
+    const btn = document.getElementById('q-copy');
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = '📋', 1000);
+  });
   document.getElementById('q-clear').addEventListener('click', clearContent);
   document.getElementById('q-close').addEventListener('click', () => {
     note.style.display = 'none';
