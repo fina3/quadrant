@@ -36,6 +36,7 @@
         </div>
       </div>
     </div>
+    <div id="quadrant-resize">⟋</div>
   `;
   document.body.appendChild(note);
 
@@ -61,6 +62,31 @@
 
   document.addEventListener('mouseup', () => {
     isDragging = false;
+  });
+
+  // RESIZE FUNCTIONALITY
+  let isResizing = false;
+
+  document.getElementById('quadrant-resize').addEventListener('mousedown', (e) => {
+    isResizing = true;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const rect = note.getBoundingClientRect();
+    const newWidth = e.clientX - rect.left;
+    const newHeight = e.clientY - rect.top;
+
+    // Minimum size
+    if (newWidth > 200) note.style.width = newWidth + 'px';
+    if (newHeight > 200) note.style.height = newHeight + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    isResizing = false;
   });
 
   // KEYBOARD - stop page from capturing
