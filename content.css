@@ -1,8 +1,73 @@
-/* Host element only - all styles are in Shadow DOM */
-#quadrant-host {
+#quadrant-note {
   position: fixed;
-  top: 0;
-  left: 0;
+  top: 100px;
+  right: 100px;
+  width: 320px;
+  height: 340px;
+  background: #fff9b1;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   z-index: 2147483647;
-  pointer-events: none;
+  font-family: -apple-system, sans-serif;
+  display: none;
+}
+
+#quadrant-header {
+  height: 24px;
+  background: #f0e68c;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+  cursor: move;
+  border-radius: 4px 4px 0 0;
+  user-select: none;
+}
+
+#quadrant-header span {
+  font-size: 11px;
+  font-weight: bold;
+  color: #666;
+}
+
+#quadrant-header button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+  padding: 2px 6px;
+}
+
+#quadrant-header button:hover {
+  color: #000;
+}
+
+#quadrant-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  height: calc(100% - 24px);
+}
+
+#quadrant-grid textarea {
+  border: 1px solid #e0d87a;
+  background: transparent;
+  padding: 4px;
+  font-size: 11px;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+}
+
+#quadrant-grid textarea::placeholder {
+  color: #aaa;
+  font-size: 9px;
+}
+
+.quadrant-labels {
+  position: absolute;
+  font-size: 8px;
+  color: #999;
+  text-transform: uppercase;
 }
