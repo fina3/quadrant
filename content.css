@@ -44,11 +44,45 @@
   color: #000;
 }
 
+#quadrant-body {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 24px);
+}
+
+#quadrant-top-labels {
+  display: flex;
+  justify-content: space-around;
+  font-size: 8px;
+  color: #888;
+  text-transform: uppercase;
+  padding: 2px 0;
+  margin-left: 20px;
+}
+
+#quadrant-main {
+  display: flex;
+  flex: 1;
+}
+
+#quadrant-side-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  font-size: 8px;
+  color: #888;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  width: 20px;
+}
+
 #quadrant-grid {
+  flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
-  height: calc(100% - 24px);
 }
 
 #quadrant-grid textarea {
@@ -62,14 +96,3 @@
   color: #333;
 }
 
-#quadrant-grid textarea::placeholder {
-  color: #aaa;
-  font-size: 9px;
-}
-
-.quadrant-labels {
-  position: absolute;
-  font-size: 8px;
-  color: #999;
-  text-transform: uppercase;
-}

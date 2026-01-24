@@ -18,11 +18,23 @@
         <button id="q-close" title="Close">×</button>
       </div>
     </div>
-    <div id="quadrant-grid">
-      <textarea data-cell="q1" placeholder="URGENT + IMPORTANT"></textarea>
-      <textarea data-cell="q2" placeholder="NOT URGENT + IMPORTANT"></textarea>
-      <textarea data-cell="q3" placeholder="URGENT + NOT IMPORTANT"></textarea>
-      <textarea data-cell="q4" placeholder="NOT URGENT + NOT IMPORTANT"></textarea>
+    <div id="quadrant-body">
+      <div id="quadrant-top-labels">
+        <span>URGENT</span>
+        <span>NOT URGENT</span>
+      </div>
+      <div id="quadrant-main">
+        <div id="quadrant-side-labels">
+          <span>IMPORTANT</span>
+          <span>NOT IMPORTANT</span>
+        </div>
+        <div id="quadrant-grid">
+          <textarea data-cell="q1"></textarea>
+          <textarea data-cell="q2"></textarea>
+          <textarea data-cell="q3"></textarea>
+          <textarea data-cell="q4"></textarea>
+        </div>
+      </div>
     </div>
   `;
   document.body.appendChild(note);
