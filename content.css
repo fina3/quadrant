@@ -75,10 +75,14 @@
   font-size: 8px;
   color: #888;
   text-transform: uppercase;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
   width: 20px;
+  text-align: center;
+}
+
+#quadrant-side-labels span {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  white-space: nowrap;
 }
 
 #quadrant-grid {
