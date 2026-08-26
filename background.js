@@ -1,11 +1,17 @@
+// Toggling is driven entirely by re-injection: content.js is idempotent and
+// toggles itself if an instance already exists. This removes the old
+// sendMessage/setTimeout race and needs no message channel at all.
 chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) return;
+  if (!tab.id) return;
+  const url = tab.url || '';
+  if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') ||
+      url.startsWith('about:') || url.startsWith('edge://') || url.startsWith('devtools://')) return;
 
   try {
-    await chrome.tabs.sendMessage(tab.id, { action: 'toggle' });
-  } catch (e) {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+    // CSS first so the note is never painted unstyled.
     await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content.css'] });
-    setTimeout(() => chrome.tabs.sendMessage(tab.id, { action: 'toggle' }), 150);
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+  } catch (e) {
+    console.warn('Quadrant: cannot inject into this tab:', e.message);
   }
 });

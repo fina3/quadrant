@@ -1,3 +1,9 @@
+#quadrant-note, #quadrant-note * {
+  /* textareas are content-box by default: their 1px border + 4px padding
+     overflowed the 1fr grid cells and produced stray scrollbars. */
+  box-sizing: border-box;
+}
+
 #quadrant-note {
   position: fixed;
   top: 100px;
