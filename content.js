@@ -3,9 +3,14 @@
 
   const INSTANCE_KEY = '__quadrantNoteInstance';
   const STORAGE_KEY = 'quadrant_global';
+  const GEOMETRY_KEY = 'quadrant_geometry';
   const CELLS = ['q1', 'q2', 'q3', 'q4'];
   const MIN_W = 240;
   const MIN_H = 220;
+  // Must match the width/height in content.css; used to clamp a stored
+  // position while the note is still hidden and therefore unmeasurable.
+  const DEFAULT_W = 320;
+  const DEFAULT_H = 340;
 
   // ---- Re-injection guard -------------------------------------------------
   // The action handler re-injects this file on every click. If a live instance
@@ -152,6 +157,74 @@
   }
   chrome.storage.onChanged.addListener(onStorageChanged);
 
+  // ---- Geometry persistence -----------------------------------------------
+  // Size and position live in their own key so the note comes back the size the
+  // user pulled it to, instead of snapping to the stylesheet defaults every
+  // time it is rebuilt in a new tab.
+  let geometryTimer = null;
+
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  const finite = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+
+  function scheduleGeometrySave() {
+    if (geometryTimer !== null) { clearTimeout(geometryTimer); timers.delete(geometryTimer); }
+    geometryTimer = later(saveGeometry, 200);
+  }
+
+  async function saveGeometry() {
+    geometryTimer = null;
+    const rect = note.getBoundingClientRect();
+    if (!rect.width || !rect.height) return; // hidden; nothing meaningful to store
+    try {
+      await chrome.storage.local.set({
+        [GEOMETRY_KEY]: {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        }
+      });
+    } catch (e) {
+      console.warn('Quadrant geometry save error:', e);
+    }
+  }
+
+  function flushGeometry() {
+    if (geometryTimer === null) return;
+    clearTimeout(geometryTimer);
+    timers.delete(geometryTimer);
+    saveGeometry();
+  }
+
+  // Applied while the note is still display:none, so it opens at the right size
+  // rather than snapping from the default. Everything is computed from the
+  // stored numbers -- a hidden element measures as 0x0.
+  async function applyStoredGeometry() {
+    let g;
+    try {
+      const res = await chrome.storage.local.get(GEOMETRY_KEY);
+      g = res[GEOMETRY_KEY];
+    } catch (e) {
+      return; // fall back to the stylesheet defaults
+    }
+    if (!g || typeof g !== 'object') return;
+
+    const w = clamp(finite(g.width) ?? DEFAULT_W, MIN_W, window.innerWidth);
+    const h = clamp(finite(g.height) ?? DEFAULT_H, MIN_H, window.innerHeight);
+    note.style.width = w + 'px';
+    note.style.height = h + 'px';
+
+    const l = finite(g.left);
+    const t = finite(g.top);
+    if (l === null || t === null) return;
+    // Clamp into this window without writing the clamped value back, so a
+    // narrow window never shrinks the size the user actually chose.
+    note.style.left = clamp(l, 60 - w, Math.max(0, window.innerWidth - 60)) + 'px';
+    note.style.top = clamp(t, 0, Math.max(0, window.innerHeight - 24)) + 'px';
+    note.style.right = 'auto';
+    note.style.bottom = 'auto';
+  }
+
   // ---- Drag ---------------------------------------------------------------
   // Pointer capture keeps the gesture on the element, so no document-level
   // mousemove/mouseup listeners have to stay armed for the life of the page.
@@ -182,7 +255,9 @@
   }, { signal });
 
   const endDrag = (e) => {
-    if (header.hasPointerCapture(e.pointerId)) header.releasePointerCapture(e.pointerId);
+    if (!header.hasPointerCapture(e.pointerId)) return;
+    header.releasePointerCapture(e.pointerId);
+    scheduleGeometrySave();
   };
   header.addEventListener('pointerup', endDrag, { signal });
   header.addEventListener('pointercancel', endDrag, { signal });
@@ -205,7 +280,9 @@
   }, { signal });
 
   const endResize = (e) => {
-    if (resizeHandle.hasPointerCapture(e.pointerId)) resizeHandle.releasePointerCapture(e.pointerId);
+    if (!resizeHandle.hasPointerCapture(e.pointerId)) return;
+    resizeHandle.releasePointerCapture(e.pointerId);
+    scheduleGeometrySave();
   };
   resizeHandle.addEventListener('pointerup', endResize, { signal });
   resizeHandle.addEventListener('pointercancel', endResize, { signal });
@@ -287,21 +364,34 @@
     }
   }, { signal });
 
-  $('#q-close').addEventListener('click', () => { flushSave(); note.style.display = 'none'; }, { signal });
+  $('#q-close').addEventListener('click', () => {
+    flushSave();
+    flushGeometry();
+    note.style.display = 'none';
+  }, { signal });
 
   // Don't lose the last <300ms of typing when the tab is hidden or unloaded.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushSave();
+    if (document.visibilityState === 'hidden') { flushSave(); flushGeometry(); }
   }, { signal });
-  window.addEventListener('pagehide', flushSave, { signal });
+  window.addEventListener('pagehide', () => { flushSave(); flushGeometry(); }, { signal });
 
   // ---- Instance API -------------------------------------------------------
+  async function show() {
+    // Restore size/position before unhiding so the note never flashes at the
+    // default size and then jump-resizes.
+    await applyStoredGeometry();
+    if (signal.aborted) return;
+    note.style.display = 'block';
+    await loadContent();
+  }
+
   function toggle() {
     if (note.style.display === 'none' || note.style.display === '') {
-      note.style.display = 'block';
-      loadContent();
+      show();
     } else {
       flushSave();
+      flushGeometry();
       note.style.display = 'none';
     }
   }
